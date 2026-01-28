@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Moon Rocks - Astronaut Animation Mockup</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            overflow: hidden;
+            touch-action: none;
+            background: #000;
+        }
+        canvas { display: block; }
+        #info {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            color: #888;
+            font-size: 11px;
+            font-family: monospace;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">MOON ROCKS - Touch higher = bigger hops, lower = quick hops</div>
+    <canvas id="gameCanvas"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resize();
+        window.addEventListener('resize', resize);
+
+        // Monochrome palette
+        const colors = {
+            sky: '#000000',
+            surfaceLight: '#C8C8C8',
+            surfaceMid: '#A0A0A0',
+            surfaceDark: '#707070',
+            surfaceDeep: '#404040',
+            mountainFar: '#606060',
+            mountainMid: '#505050',
+            mountainNear: '#454545',
+            suitBright: '#FFFFFF',
+            suitLight: '#E8E8E8',
+            suitMid: '#C0C0C0',
+            suitDark: '#888888',
+            suitShadow: '#505050',
+            helmetWhite: '#FFFFFF',
+            helmetGrey: '#D0D0D0',
+            visorDark: '#151515',
+            visorReflect: '#303030',
+            plssLight: '#D0D0D0',
+            plssDark: '#606060'
+        };
+
+        const state = {
+            astronaut: {
+                x: 0,
+                y: 0,
+                vx: 0,
+                vy: 0,
+                facingRight: true,
+                flipProgress: 1,
+
+                // Walk state
+                isWalking: false,
+                stepFoot: 0,         // 0 = left foot forward, 1 = right foot forward
+
+                // Hop state
+                airborne: false,
+                hopProgress: 0,      // 0 = just pushed off, 1 = about to land
+
+                // Variation for organic feel
+                hopVariation: 1.0,   // Random 0.6-1.4 each hop
+                hopSpeedVar: 1.0,    // Random timing variation
+                armWobble: 0,        // Slight arm adjustment
+                bodySquash: 1.0,     // Squash on land, stretch in air
+                landingVelocity: 0,  // For dust amount
+
+                // Limb angles (in radians)
+                leftHipAngle: 0,
+                leftKneeAngle: 0,
+                rightHipAngle: 0,
+                rightKneeAngle: 0,
+                leftShoulderAngle: 0,
+                leftElbowAngle: 0,
+                rightShoulderAngle: 0,
+                rightElbowAngle: 0,
+
+                bodyTilt: 0,
+                bodyBob: 0           // Vertical compression
+            },
+            lander: { x: 0, y: 0 },
+            finger: { x: null, y: null, active: false },
+            camera: { x: 0 },
+            stars: [],
+            footprints: [],
+            dustParticles: [],
+            groundY: 0
+        };
+
+        function initStars() {
+            state.stars = [];
+            for (let i = 0; i < 100; i++) {
+                state.stars.push({
+                    x: Math.random() * 4000 - 2000,
+                    y: Math.random() * canvas.height * 0.4,
+                    size: Math.random() * 1.2 + 0.3,
+                    brightness: Math.random() * 0.6 + 0.4
+                });
+            }
+        }
+
+        function init() {
+            state.groundY = canvas.height * 0.72;
+            state.lander.x = canvas.width / 2;
+            state.lander.y = state.groundY;
+            state.astronaut.x = state.lander.x - 120;
+            state.astronaut.y = state.groundY;
+            state.camera.x = state.astronaut.x - canvas.width / 2;
+            initStars();
+        }
+
+        // Input - simplified: just track if touching and where
+        function handleStart(x, y) {
+            state.finger.active = true;
+            state.finger.x = x + state.camera.x;
+            state.finger.y = y;
+        }
+        function handleMove(x, y) {
+            if (state.finger.active) {
+                state.finger.x = x + state.camera.x;
+                state.finger.y = y;
+            }
+        }
+        function handleEnd() {
+            state.finger.active = false;
+        }
+
+        canvas.addEventListener('mousedown', e => handleStart(e.clientX, e.clientY));
+        canvas.addEventListener('mousemove', e => handleMove(e.clientX, e.clientY));
+        canvas.addEventListener('mouseup', handleEnd);
+        canvas.addEventListener('mouseleave', handleEnd);
+        canvas.addEventListener('touchstart', e => { e.preventDefault(); handleStart(e.touches[0].clientX, e.touches[0].clientY); });
+        canvas.addEventListener('touchmove', e => { e.preventDefault(); handleMove(e.touches[0].clientX, e.touches[0].clientY); });
+        canvas.addEventListener('touchend', handleEnd);
+
+        function addDust(x, y, vx, intensity = 1) {
+            // More dust for harder landings
+            const count = Math.floor(3 + intensity * 6);
+            for (let i = 0; i < count; i++) {
+                const spread = 10 + intensity * 15;
+                const speed = 0.8 + intensity * 1.5;
+                state.dustParticles.push({
+                    x: x + (Math.random() - 0.5) * spread,
+                    y: y - Math.random() * 3,
+                    vx: vx * 0.15 + (Math.random() - 0.5) * speed * 2,
+                    vy: -Math.random() * speed - 0.3,
+                    life: 0.7 + intensity * 0.5,
+                    size: Math.random() * (2 + intensity * 2) + 1.5
+                });
+            }
+        }
+
+        function updateDust(dt) {
+            for (let i = state.dustParticles.length - 1; i >= 0; i--) {
+                const d = state.dustParticles[i];
+                d.x += d.vx;
+                d.y += d.vy;
+                d.vy += 0.015;
+                d.life -= dt * 0.7;
+                if (d.life <= 0) state.dustParticles.splice(i, 1);
+            }
+        }
+
+        function addFootprint(x, y) {
+            if (state.footprints.length > 80) state.footprints.shift();
+            state.footprints.push({ x, y });
+        }
+
+        function updateAstronaut(dt) {
+            const astro = state.astronaut;
+            const finger = state.finger;
+            const groundY = state.groundY;
+
+            // Determine if we should walk and which direction
+            let wantToWalk = false;
+            let walkDirection = 0; // -1 left, +1 right
+            let hopIntensity = 1.0;  // Controlled by finger height
+
+            if (finger.active && finger.x !== null) {
+                const dx = finger.x - astro.x;
+
+                // Finger height controls hop intensity!
+                // Higher finger (lower Y) = bigger hops
+                // Lower finger (higher Y) = smaller quick hops
+                const fingerYNorm = finger.y / canvas.height;  // 0 = top, 1 = bottom
+                // Map: top of screen = 4.5 intensity, bottom = 0.25 intensity
+                hopIntensity = 4.5 - fingerYNorm * 4.25;
+                hopIntensity = Math.max(0.25, Math.min(5.0, hopIntensity));  // Clamp
+
+                // Very small deadzone - keep moving as long as finger is down
+                if (Math.abs(dx) > 10) {
+                    wantToWalk = true;
+                    walkDirection = dx > 0 ? 1 : -1;
+
+                    // Only change facing direction when ON THE GROUND
+                    // Prevents glitchy flipping mid-hop
+                    if (!astro.airborne) {
+                        const shouldFaceRight = dx > 0;
+                        if (shouldFaceRight !== astro.facingRight) {
+                            astro.facingRight = shouldFaceRight;
+                            astro.flipProgress = 0;
+                        }
+                    } else {
+                        // While airborne, keep moving in facing direction
+                        walkDirection = astro.facingRight ? 1 : -1;
+                    }
+                } else if (astro.isWalking) {
+                    // Keep walking in same direction if close to finger
+                    wantToWalk = true;
+                    walkDirection = astro.facingRight ? 1 : -1;
+                }
+            }
+
+            // Moon physics constants
+            const moonGravity = 0.22;
+            const baseHopStrength = 4.0;
+            const baseWalkSpeed = 5.0;
+
+            // Walking state machine
+            if (wantToWalk) {
+                astro.isWalking = true;
+                // Speed varies with hop intensity - bigger hops = much faster
+                astro.vx = walkDirection * baseWalkSpeed * (0.5 + hopIntensity * 0.5);
+
+                // If on ground and want to walk, initiate a hop
+                if (!astro.airborne) {
+                    // Hop variation combines finger height with small random factor
+                    astro.hopVariation = hopIntensity * (0.94 + Math.random() * 0.12);
+                    // Bigger hops are floatier, smaller hops are snappy
+                    astro.hopSpeedVar = 2.0 - hopIntensity * 0.35;
+                    astro.armWobble = (Math.random() - 0.5) * 0.12;
+
+                    astro.vy = -baseHopStrength * astro.hopVariation;
+                    astro.airborne = true;
+                    astro.stepFoot = 1 - astro.stepFoot; // Alternate feet
+                    astro.hopProgress = 0;
+
+                    // Dust on push-off, scaled by hop strength
+                    addDust(astro.x, groundY, astro.vx, astro.hopVariation * 0.6);
+                    addFootprint(astro.x + (Math.random() - 0.5) * 8, groundY);
+
+                    // Squash on push-off - more for bigger hops
+                    astro.bodySquash = 0.94 - astro.hopVariation * 0.04;
+                }
+            } else {
+                astro.isWalking = false;
+                astro.vx *= 0.85;
+                if (Math.abs(astro.vx) < 0.1) astro.vx = 0;
+            }
+
+            // Apply gravity if airborne
+            if (astro.airborne) {
+                astro.vy += moonGravity;
+                // Track hop progress - varies with hop size
+                const progressSpeed = 7.5 * astro.hopSpeedVar;
+                astro.hopProgress = Math.min(1, (astro.hopProgress || 0) + dt * progressSpeed);
+
+                // Stretch at peak of hop
+                if (astro.vy < 0.5 && astro.vy > -0.5) {
+                    astro.bodySquash = 1.04;  // Slight stretch at apex
+                } else {
+                    astro.bodySquash += (1.0 - astro.bodySquash) * 0.1;
+                }
+
+                // Track velocity for landing dust
+                astro.landingVelocity = astro.vy;
+            }
+
+            // Apply velocities
+            astro.x += astro.vx;
+            astro.y += astro.vy;
+
+            // Ground collision
+            if (astro.y >= groundY) {
+                astro.y = groundY;
+                if (astro.airborne) {
+                    // Landing! More dust for harder landings
+                    const landIntensity = Math.min(1.5, Math.abs(astro.landingVelocity) / 3);
+                    addDust(astro.x, groundY, astro.vx, landIntensity);
+
+                    // Squash on landing
+                    astro.bodySquash = 0.88 - landIntensity * 0.05;
+                    astro.bodyBob = landIntensity * 8;  // Compress down
+
+                    astro.airborne = false;
+                    astro.vy = 0;
+                    astro.hopProgress = 0;
+                }
+            }
+
+            // Body bob recovery (spring back from landing compression)
+            astro.bodyBob *= 0.75;
+            astro.bodySquash += (1.0 - astro.bodySquash) * 0.15;
+
+            // Update flip animation
+            if (astro.flipProgress < 1) {
+                astro.flipProgress += dt * 5;
+                if (astro.flipProgress > 1) astro.flipProgress = 1;
+            }
+
+            // Calculate limb angles based on walk phase and airborne state
+            updateLimbAngles(astro, dt);
+
+        }
+
+        function updateLimbAngles(astro, dt) {
+            const hp = astro.hopProgress || 0; // 0 = just pushed off, 1 = about to land
+            const foot = astro.stepFoot; // 0 = left foot forward, 1 = right foot forward
+            const hv = astro.hopVariation || 1.0;  // Hop variation affects stride
+            const wobble = astro.armWobble || 0;
+
+            if (astro.isWalking || astro.airborne) {
+                // Bounding hop - alternating legs
+                // Bigger hops = bigger stride, smaller hops = tighter stride
+                const strideScale = 0.7 + hv * 0.4;  // Scale leg spread by hop size
+
+                let landHip, landKnee, pushHip, pushKnee;
+
+                if (hp < 0.2) {
+                    // Push off - back leg extends to push
+                    const phase = hp / 0.2;
+                    landHip = -0.2 * strideScale;
+                    landKnee = 0.55 * (1 - phase);
+                    pushHip = 0.55 * strideScale * (1 - phase);
+                    pushKnee = 0.65 * (1 - phase);
+
+                } else if (hp < 0.6) {
+                    // In air - legs swap, float feeling
+                    const phase = (hp - 0.2) / 0.4;
+                    // Smooth transition
+                    landHip = -0.2 * strideScale + phase * 0.55 * strideScale;
+                    landKnee = 0.25 + Math.sin(phase * Math.PI) * 0.1;  // Slight bend variation
+                    pushHip = 0.15 * strideScale - phase * 0.45 * strideScale;
+                    pushKnee = 0.35 + Math.sin(phase * Math.PI) * 0.1;
+
+                } else {
+                    // Landing - absorb impact
+                    const phase = (hp - 0.6) / 0.4;
+                    landHip = 0.35 * strideScale - phase * 0.2 * strideScale;
+                    landKnee = 0.25 + phase * 0.35;  // Bend to absorb
+                    pushHip = -0.3 * strideScale + phase * 0.15 * strideScale;
+                    pushKnee = 0.35 + phase * 0.45;  // Bend to land
+                }
+
+                // Apply to correct legs based on which foot is landing
+                if (foot === 0) {
+                    astro.leftHipAngle = pushHip;
+                    astro.leftKneeAngle = pushKnee;
+                    astro.rightHipAngle = landHip;
+                    astro.rightKneeAngle = landKnee;
+                } else {
+                    astro.rightHipAngle = pushHip;
+                    astro.rightKneeAngle = pushKnee;
+                    astro.leftHipAngle = landHip;
+                    astro.leftKneeAngle = landKnee;
+                }
+
+                // Arms swing opposite to legs with variation
+                const armSwingBase = 0.35 + hv * 0.1;
+                const armFloat = Math.sin(hp * Math.PI) * 0.08;  // Float up at apex
+                if (foot === 0) {
+                    astro.leftShoulderAngle = 0.25 + wobble + armFloat;
+                    astro.rightShoulderAngle = armSwingBase + 0.15 - wobble + armFloat;
+                } else {
+                    astro.leftShoulderAngle = armSwingBase + 0.15 + wobble + armFloat;
+                    astro.rightShoulderAngle = 0.25 - wobble + armFloat;
+                }
+                // Elbows with slight variation
+                astro.leftElbowAngle = -0.95 - wobble * 0.5;
+                astro.rightElbowAngle = -0.95 + wobble * 0.5;
+
+            } else {
+                // Idle - relaxed stance with gentle breathing motion
+                const decay = 0.88;
+                const breathe = Math.sin(Date.now() * 0.0015) * 0.025;
+                const sway = Math.sin(Date.now() * 0.001) * 0.015;
+
+                astro.leftHipAngle *= decay;
+                astro.rightHipAngle *= decay;
+                astro.leftKneeAngle = astro.leftKneeAngle * decay + 0.12 * (1 - decay);
+                astro.rightKneeAngle = astro.rightKneeAngle * decay + 0.12 * (1 - decay);
+
+                astro.leftShoulderAngle = astro.leftShoulderAngle * decay + (0.38 + sway) * (1 - decay);
+                astro.rightShoulderAngle = astro.rightShoulderAngle * decay + (0.38 - sway) * (1 - decay);
+                astro.leftElbowAngle = astro.leftElbowAngle * decay + (-0.9 + breathe) * (1 - decay);
+                astro.rightElbowAngle = astro.rightElbowAngle * decay + (-0.9 - breathe) * (1 - decay);
+            }
+        }
+
+        function updateCamera() {
+            const targetX = state.astronaut.x - canvas.width / 2;
+            state.camera.x += (targetX - state.camera.x) * 0.05;
+        }
+
+        // === DRAWING ===
+
+        function drawStars() {
+            state.stars.forEach(star => {
+                const screenX = star.x - state.camera.x * 0.05;
+                if (screenX < -5 || screenX > canvas.width + 5) return;
+                ctx.fillStyle = `rgba(255, 255, 255, ${star.brightness})`;
+                ctx.beginPath();
+                ctx.arc(screenX, star.y, star.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        function drawMountains() {
+            const groundY = state.groundY;
+
+            ctx.fillStyle = colors.mountainFar;
+            ctx.beginPath();
+            ctx.moveTo(0, groundY - 30);
+            for (let x = 0; x <= canvas.width; x += 50) {
+                const worldX = x + state.camera.x * 0.1;
+                const h = Math.sin(worldX * 0.003) * 40 + Math.sin(worldX * 0.007) * 25 + 50;
+                ctx.lineTo(x, groundY - h);
+            }
+            ctx.lineTo(canvas.width, groundY);
+            ctx.lineTo(0, groundY);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = colors.mountainMid;
+            ctx.beginPath();
+            ctx.moveTo(0, groundY - 20);
+            for (let x = 0; x <= canvas.width; x += 40) {
+                const worldX = x + state.camera.x * 0.2;
+                const h = Math.sin(worldX * 0.005 + 1) * 30 + Math.sin(worldX * 0.01) * 20 + 35;
+                ctx.lineTo(x, groundY - h);
+            }
+            ctx.lineTo(canvas.width, groundY);
+            ctx.lineTo(0, groundY);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = colors.mountainNear;
+            ctx.beginPath();
+            ctx.moveTo(0, groundY - 10);
+            for (let x = 0; x <= canvas.width; x += 30) {
+                const worldX = x + state.camera.x * 0.35;
+                const h = Math.sin(worldX * 0.008 + 2) * 20 + Math.sin(worldX * 0.015) * 12 + 18;
+                ctx.lineTo(x, groundY - h);
+            }
+            ctx.lineTo(canvas.width, groundY);
+            ctx.lineTo(0, groundY);
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        function drawSurface() {
+            const groundY = state.groundY;
+            const grad = ctx.createLinearGradient(0, groundY, 0, canvas.height);
+            grad.addColorStop(0, colors.surfaceLight);
+            grad.addColorStop(0.2, colors.surfaceMid);
+            grad.addColorStop(0.6, colors.surfaceDark);
+            grad.addColorStop(1, colors.surfaceDeep);
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);
+
+            ctx.fillStyle = colors.surfaceDark;
+            for (let i = 0; i < 40; i++) {
+                const wx = (i * 97 + state.camera.x * 0.5) % (canvas.width + 100) - 50;
+                const wy = groundY + 8 + (i % 5) * 20;
+                ctx.beginPath();
+                ctx.arc(wx, wy, 1.5 + (i % 4), 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function drawFootprints() {
+            ctx.fillStyle = 'rgba(80, 80, 80, 0.5)';
+            state.footprints.forEach(fp => {
+                const sx = fp.x - state.camera.x;
+                if (sx < -15 || sx > canvas.width + 15) return;
+                ctx.beginPath();
+                ctx.ellipse(sx, fp.y + 3, 6, 10, 0, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        function drawDust() {
+            state.dustParticles.forEach(d => {
+                const sx = d.x - state.camera.x;
+                ctx.fillStyle = `rgba(180, 180, 180, ${d.life * 0.6})`;
+                ctx.beginPath();
+                ctx.arc(sx, d.y, d.size * d.life, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        function drawLunarLander() {
+            const lander = state.lander;
+            const sx = lander.x - state.camera.x;
+            const sy = lander.y;
+
+            ctx.save();
+            ctx.translate(sx, sy);
+            ctx.scale(1.1, 1.1);
+
+            // Shadow
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+            ctx.beginPath();
+            ctx.ellipse(20, 5, 70, 12, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Legs
+            ctx.strokeStyle = '#707070';
+            ctx.lineWidth = 5;
+            ctx.beginPath();
+            ctx.moveTo(-45, -70);
+            ctx.lineTo(-85, 0);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(45, -70);
+            ctx.lineTo(85, 0);
+            ctx.stroke();
+
+            // Foot pads
+            ctx.fillStyle = '#505050';
+            ctx.beginPath();
+            ctx.ellipse(-85, 0, 18, 6, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(85, 0, 18, 6, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Descent stage
+            ctx.fillStyle = '#8B7355';
+            ctx.beginPath();
+            ctx.moveTo(-55, -70);
+            ctx.lineTo(-65, -115);
+            ctx.lineTo(65, -115);
+            ctx.lineTo(55, -70);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.strokeStyle = '#6B5344';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < 7; i++) {
+                ctx.beginPath();
+                ctx.moveTo(-50 + i * 15, -110);
+                ctx.lineTo(-45 + i * 15, -75);
+                ctx.stroke();
+            }
+
+            // Ascent stage
+            ctx.fillStyle = '#E0E0E0';
+            ctx.beginPath();
+            ctx.moveTo(-48, -115);
+            ctx.lineTo(-52, -175);
+            ctx.lineTo(-38, -200);
+            ctx.lineTo(38, -200);
+            ctx.lineTo(52, -175);
+            ctx.lineTo(48, -115);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = '#A0A0A0';
+            ctx.beginPath();
+            ctx.moveTo(5, -115);
+            ctx.lineTo(48, -115);
+            ctx.lineTo(52, -175);
+            ctx.lineTo(38, -200);
+            ctx.lineTo(5, -200);
+            ctx.closePath();
+            ctx.fill();
+
+            // Window
+            ctx.fillStyle = '#202020';
+            ctx.beginPath();
+            ctx.moveTo(-22, -165);
+            ctx.lineTo(-28, -140);
+            ctx.lineTo(-5, -135);
+            ctx.lineTo(-5, -170);
+            ctx.closePath();
+            ctx.fill();
+
+            // Antenna
+            ctx.strokeStyle = '#808080';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(0, -200);
+            ctx.lineTo(0, -235);
+            ctx.stroke();
+            ctx.fillStyle = '#C0C0C0';
+            ctx.beginPath();
+            ctx.ellipse(0, -235, 18, 6, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Ladder
+            ctx.strokeStyle = '#808080';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(-62, -70);
+            ctx.lineTo(-70, 0);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(-55, -70);
+            ctx.lineTo(-63, 0);
+            ctx.stroke();
+
+            ctx.restore();
+
+            // Flag
+            drawFlag(sx - 130, sy);
+        }
+
+        function drawFlag(x, y) {
+            ctx.save();
+            ctx.translate(x, y);
+
+            ctx.strokeStyle = '#A0A0A0';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(0, -70);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(0, -70);
+            ctx.lineTo(35, -70);
+            ctx.stroke();
+
+            ctx.fillStyle = '#BF0A30';
+            ctx.fillRect(0, -70, 35, 22);
+            ctx.fillStyle = '#FFFFFF';
+            for (let i = 0; i < 6; i++) {
+                if (i % 2 === 1) ctx.fillRect(0, -70 + i * 3.5, 35, 3.5);
+            }
+            ctx.fillStyle = '#002868';
+            ctx.fillRect(0, -70, 14, 12);
+
+            ctx.restore();
+        }
+
+        function drawAstronaut() {
+            const astro = state.astronaut;
+            const sx = astro.x - state.camera.x;
+            const sy = astro.y + astro.bodyBob;  // Add compression bob
+
+            ctx.save();
+            ctx.translate(sx, sy);
+
+            // Shadow - smaller when higher, bigger when landing hard
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+            const height = state.groundY - astro.y;
+            const shadowScale = Math.max(0.6, 1 - height * 0.008);
+            const shadowStretch = astro.airborne ? 1.2 + height * 0.003 : 1;
+            ctx.beginPath();
+            ctx.ellipse(15 * shadowScale, 5, 22 * shadowStretch * shadowScale, 7 * shadowScale, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 2.5D flip - astronaut faces direction of movement
+            const ep = astro.flipProgress < 0.5
+                ? 2 * astro.flipProgress * astro.flipProgress
+                : 1 - Math.pow(-2 * astro.flipProgress + 2, 2) / 2;
+            const scaleX = astro.facingRight ? -1 + ep * 2 : 1 - ep * 2;
+
+            // Apply squash/stretch
+            const squash = astro.bodySquash || 1.0;
+
+            // Body tilt BEFORE scale so it doesn't get inverted
+            // Always lean forward into movement
+            const tiltAmount = Math.abs(astro.vx) * 0.07;
+            const visualTilt = astro.vx > 0 ? tiltAmount : -tiltAmount;
+            ctx.rotate(visualTilt);
+
+            ctx.scale(scaleX * (2 - squash), squash);  // Inverse width when squashing
+
+            // Draw layered (back to front)
+            // Back leg
+            drawLeg(ctx, astro.rightHipAngle, astro.rightKneeAngle, true);
+            // Back arm
+            drawArm(ctx, astro.rightShoulderAngle, astro.rightElbowAngle, true);
+            // PLSS backpack
+            drawPLSS(ctx);
+            // Torso
+            drawTorso(ctx);
+            // Front leg
+            drawLeg(ctx, astro.leftHipAngle, astro.leftKneeAngle, false);
+            // Front arm
+            drawArm(ctx, astro.leftShoulderAngle, astro.leftElbowAngle, false);
+            // Helmet
+            drawHelmet(ctx);
+
+            ctx.restore();
+        }
+
+        function drawPLSS(ctx) {
+            ctx.save();
+            ctx.translate(-8, -72);
+
+            ctx.fillStyle = colors.plssLight;
+            roundRect(ctx, -20, -38, 40, 55, 4);
+            ctx.fill();
+
+            ctx.fillStyle = colors.plssDark;
+            ctx.beginPath();
+            ctx.moveTo(10, -36);
+            ctx.lineTo(18, -36);
+            ctx.quadraticCurveTo(20, -36, 20, -34);
+            ctx.lineTo(20, 15);
+            ctx.quadraticCurveTo(20, 17, 18, 17);
+            ctx.lineTo(10, 17);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = colors.suitDark;
+            ctx.fillRect(-18, -22, 36, 3);
+            ctx.fillRect(-18, -5, 36, 3);
+            ctx.fillRect(-18, 8, 36, 3);
+
+            ctx.strokeStyle = '#404040';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(-20, -12);
+            ctx.quadraticCurveTo(-32, -12, -32, 3);
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        function drawTorso(ctx) {
+            ctx.save();
+            ctx.translate(0, -52);
+
+            ctx.fillStyle = colors.suitLight;
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 24, 32, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = colors.suitMid;
+            ctx.beginPath();
+            ctx.ellipse(7, 0, 17, 30, 0, -0.5, 1.2);
+            ctx.fill();
+
+            ctx.fillStyle = colors.suitDark;
+            ctx.fillRect(-10, -13, 18, 22);
+
+            ctx.fillStyle = '#404040';
+            ctx.fillRect(-8, -10, 5, 5);
+            ctx.fillRect(0, -10, 5, 5);
+            ctx.fillRect(-8, -2, 5, 5);
+            ctx.fillStyle = '#555555';
+            ctx.fillRect(0, -2, 5, 5);
+
+            ctx.fillStyle = colors.suitDark;
+            ctx.beginPath();
+            ctx.ellipse(0, 28, 22, 7, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        function drawHelmet(ctx) {
+            ctx.save();
+            ctx.translate(0, -95);
+
+            // Helmet shell
+            ctx.fillStyle = colors.helmetWhite;
+            ctx.beginPath();
+            ctx.arc(0, 0, 26, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = colors.helmetGrey;
+            ctx.beginPath();
+            ctx.arc(5, 2, 23, -0.3, 1.7);
+            ctx.fill();
+
+            // Visor - facing FORWARD (side view), not at player
+            // The visor wraps around the front-facing side of the helmet
+            const visorGrad = ctx.createLinearGradient(5, -12, 20, 8);
+            visorGrad.addColorStop(0, colors.visorReflect);
+            visorGrad.addColorStop(0.4, colors.visorDark);
+            visorGrad.addColorStop(1, '#080808');
+
+            ctx.fillStyle = visorGrad;
+            ctx.beginPath();
+            // Visor is on the FRONT of helmet (positive X after flip)
+            ctx.ellipse(6, 2, 16, 18, 0.15, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Subtle reflection
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+            ctx.beginPath();
+            ctx.ellipse(0, -4, 5, 4, -0.3, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Neck ring
+            ctx.fillStyle = colors.suitDark;
+            ctx.beginPath();
+            ctx.ellipse(0, 20, 20, 7, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Side antenna nubs (communication)
+            ctx.fillStyle = '#505050';
+            ctx.beginPath();
+            ctx.arc(-22, 0, 3, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        function drawArm(ctx, shoulderAngle, elbowAngle, isBack) {
+            ctx.save();
+
+            const shoulderX = isBack ? 16 : -20;
+            const shoulderY = -68;
+            ctx.translate(shoulderX, shoulderY);
+            ctx.rotate(shoulderAngle);
+
+            const baseColor = isBack ? colors.suitMid : colors.suitLight;
+            const jointColor = colors.suitDark;
+            const darkColor = isBack ? colors.suitDark : colors.suitMid;
+
+            // Upper arm - puffy
+            ctx.fillStyle = baseColor;
+            ctx.beginPath();
+            ctx.ellipse(0, 16, 11, 18, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Elbow ring
+            ctx.fillStyle = jointColor;
+            ctx.beginPath();
+            ctx.ellipse(0, 32, 9, 4, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Lower arm (rotates from elbow)
+            ctx.save();
+            ctx.translate(0, 32);
+            ctx.rotate(elbowAngle);
+
+            ctx.fillStyle = baseColor;
+            ctx.beginPath();
+            ctx.ellipse(0, 16, 10, 16, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Wrist ring
+            ctx.fillStyle = jointColor;
+            ctx.beginPath();
+            ctx.ellipse(0, 30, 8, 3, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Glove
+            ctx.fillStyle = darkColor;
+            ctx.beginPath();
+            ctx.ellipse(0, 40, 8, 12, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+            ctx.restore();
+        }
+
+        function drawLeg(ctx, hipAngle, kneeAngle, isBack) {
+            ctx.save();
+
+            const hipX = isBack ? 8 : -8;
+            const hipY = -24;
+            ctx.translate(hipX, hipY);
+            ctx.rotate(hipAngle);
+
+            const baseColor = isBack ? colors.suitMid : colors.suitLight;
+            const jointColor = colors.suitDark;
+            const darkColor = isBack ? colors.suitDark : colors.suitMid;
+
+            // Upper leg - puffy
+            ctx.fillStyle = baseColor;
+            ctx.beginPath();
+            ctx.ellipse(0, 20, 13, 24, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Knee ring
+            ctx.fillStyle = jointColor;
+            ctx.beginPath();
+            ctx.ellipse(0, 42, 11, 5, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Lower leg (rotates from knee)
+            ctx.save();
+            ctx.translate(0, 42);
+            ctx.rotate(kneeAngle);
+
+            ctx.fillStyle = baseColor;
+            ctx.beginPath();
+            ctx.ellipse(0, 20, 12, 22, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Boot top ring
+            ctx.fillStyle = jointColor;
+            ctx.beginPath();
+            ctx.ellipse(0, 40, 12, 4, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Moon boot - proper boot shape, not a cup
+            ctx.fillStyle = darkColor;
+            ctx.beginPath();
+            // Boot starts at ankle
+            ctx.moveTo(-12, 40);
+            // Back of boot goes down
+            ctx.lineTo(-10, 55);
+            // Heel
+            ctx.lineTo(-12, 62);
+            ctx.lineTo(-12, 68);
+            // Sole - flat bottom
+            ctx.lineTo(16, 68);
+            // Toe curves up slightly
+            ctx.lineTo(18, 65);
+            ctx.lineTo(16, 55);
+            // Front of boot
+            ctx.lineTo(12, 40);
+            ctx.closePath();
+            ctx.fill();
+
+            // Boot sole - darker
+            ctx.fillStyle = colors.suitShadow;
+            ctx.beginPath();
+            ctx.moveTo(-12, 65);
+            ctx.lineTo(-12, 70);
+            ctx.lineTo(16, 70);
+            ctx.lineTo(18, 65);
+            ctx.lineTo(16, 65);
+            ctx.lineTo(-10, 65);
+            ctx.closePath();
+            ctx.fill();
+
+            // Tread marks on sole
+            ctx.fillStyle = '#3a3a3a';
+            ctx.fillRect(-10, 66, 4, 3);
+            ctx.fillRect(-3, 66, 4, 3);
+            ctx.fillRect(4, 66, 4, 3);
+            ctx.fillRect(11, 66, 4, 3);
+
+            ctx.restore();
+            ctx.restore();
+        }
+
+        function roundRect(ctx, x, y, w, h, r) {
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.lineTo(x + w - r, y);
+            ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+            ctx.lineTo(x + w, y + h - r);
+            ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+            ctx.lineTo(x + r, y + h);
+            ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+            ctx.lineTo(x, y + r);
+            ctx.quadraticCurveTo(x, y, x + r, y);
+            ctx.closePath();
+        }
+
+        // Game loop
+        let lastTime = performance.now();
+
+        function gameLoop(currentTime) {
+            const dt = Math.min((currentTime - lastTime) / 1000, 0.1);
+            lastTime = currentTime;
+
+            updateAstronaut(dt);
+            updateCamera();
+            updateDust(dt);
+
+            ctx.fillStyle = colors.sky;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            drawStars();
+            drawMountains();
+            drawSurface();
+            drawFootprints();
+            drawDust();
+            drawLunarLander();
+            drawAstronaut();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        init();
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>
