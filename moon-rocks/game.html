@@ -1,0 +1,2406 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Moon Rocks</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            overflow: hidden;
+            touch-action: none;
+            background: #000;
+            font-family: 'Courier New', monospace;
+        }
+        canvas { display: block; }
+
+        /* HUD */
+        #hud {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 10px 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        .hud-left, .hud-right {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .hud-panel {
+            background: rgba(0, 0, 0, 0.6);
+            border: 1px solid #444;
+            padding: 8px 12px;
+            color: #0f0;
+            font-size: 12px;
+        }
+
+        .o2-bar {
+            width: 120px;
+            height: 16px;
+            background: #222;
+            border: 1px solid #444;
+            margin-top: 4px;
+        }
+
+        .o2-fill {
+            height: 100%;
+            background: #0f0;
+            transition: width 0.3s, background-color 0.3s;
+        }
+
+        .o2-fill.warning {
+            background: #ff0;
+        }
+
+        .o2-fill.critical {
+            background: #f00;
+            animation: pulse 0.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .lander-indicator {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .lander-arrow {
+            font-size: 16px;
+        }
+
+        #message {
+            position: fixed;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid #0f0;
+            padding: 12px 20px;
+            color: #0f0;
+            font-size: 14px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        #message.show {
+            opacity: 1;
+        }
+
+        /* Oxygen Warning */
+        #oxygenWarning {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0);
+            color: #ff3333;
+            font-size: 28px;
+            font-weight: bold;
+            text-align: center;
+            text-shadow: 0 0 20px #ff0000, 0 0 40px #ff0000;
+            pointer-events: none;
+            z-index: 200;
+            opacity: 0;
+            transition: none;
+        }
+
+        #oxygenWarning.show {
+            animation: warningPulse 3s ease-out forwards;
+        }
+
+        @keyframes warningPulse {
+            0% {
+                opacity: 0;
+                transform: translate(-50%, -50%) scale(0.5);
+            }
+            15% {
+                opacity: 1;
+                transform: translate(-50%, -50%) scale(1.3);
+            }
+            30% {
+                transform: translate(-50%, -50%) scale(1.0);
+            }
+            50% {
+                transform: translate(-50%, -50%) scale(1.1);
+            }
+            70% {
+                opacity: 1;
+                transform: translate(-50%, -50%) scale(1.0);
+            }
+            100% {
+                opacity: 0;
+                transform: translate(-50%, -50%) scale(0.8);
+            }
+        }
+
+        /* Deposit HUD */
+        #depositHUD {
+            position: fixed;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(0, 20, 40, 0.85);
+            border: 2px solid #00ffff;
+            border-radius: 8px;
+            padding: 15px 20px;
+            color: #00ffff;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            pointer-events: none;
+            z-index: 150;
+            opacity: 0;
+            transition: opacity 0.5s ease-out;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.3), inset 0 0 30px rgba(0, 255, 255, 0.1);
+            min-width: 200px;
+        }
+
+        #depositHUD.show {
+            opacity: 1;
+        }
+
+        #depositHUD.fade {
+            opacity: 0;
+            transition: opacity 1s ease-out;
+        }
+
+        #depositHUD .hud-title {
+            color: #ffff00;
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            text-align: center;
+            text-shadow: 0 0 10px #ffff00;
+            border-bottom: 1px solid #00ffff;
+            padding-bottom: 8px;
+        }
+
+        #depositHUD .hud-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+            border-bottom: 1px solid rgba(0, 255, 255, 0.2);
+        }
+
+        #depositHUD .hud-row:last-child {
+            border-bottom: none;
+        }
+
+        #depositHUD .rock-name {
+            color: #88ffff;
+        }
+
+        #depositHUD .rock-count {
+            color: #aaaaaa;
+            margin: 0 10px;
+        }
+
+        #depositHUD .rock-points {
+            color: #00ff00;
+            text-shadow: 0 0 5px #00ff00;
+        }
+
+        #depositHUD .hud-total {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 2px solid #00ffff;
+            display: flex;
+            justify-content: space-between;
+            font-size: 15px;
+            font-weight: bold;
+        }
+
+        #depositHUD .hud-total .total-label {
+            color: #ffff00;
+        }
+
+        #depositHUD .hud-total .total-points {
+            color: #00ff00;
+            text-shadow: 0 0 10px #00ff00;
+        }
+
+        /* Scanline effect for HUD */
+        #depositHUD::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 2px,
+                rgba(0, 255, 255, 0.03) 2px,
+                rgba(0, 255, 255, 0.03) 4px
+            );
+            pointer-events: none;
+            border-radius: 6px;
+        }
+    </style>
+</head>
+<body>
+    <div id="hud">
+        <div class="hud-left">
+            <div class="hud-panel">
+                <div>O2 SUPPLY</div>
+                <div class="o2-bar">
+                    <div class="o2-fill" id="o2Fill"></div>
+                </div>
+            </div>
+            <div class="hud-panel">
+                CARRYING: <span id="carrying">0</span> ROCKS
+            </div>
+        </div>
+        <div class="hud-right">
+            <div class="hud-panel">
+                SCORE: <span id="score">0</span>
+            </div>
+            <div class="hud-panel lander-indicator">
+                <span class="lander-arrow" id="landerArrow">&#9664;</span>
+                <span>LM: <span id="landerDist">0</span>m</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="message"></div>
+
+    <div id="oxygenWarning">
+        <div>⚠ WARNING ⚠</div>
+        <div style="font-size: 36px; margin: 10px 0;">OXYGEN LOW</div>
+        <div style="font-size: 24px;">RETURN TO LM NOW</div>
+    </div>
+
+    <div id="depositHUD">
+        <div class="hud-title">▶ SAMPLE MANIFEST ◀</div>
+        <div id="depositList"></div>
+        <div class="hud-total">
+            <span class="total-label">TOTAL:</span>
+            <span class="total-points" id="depositTotal">+0</span>
+        </div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resize();
+        window.addEventListener('resize', resize);
+
+        // === AUDIO SYSTEM ===
+        let audioCtx = null;
+        let breathingGain = null;
+        let breathingOsc = null;
+
+        function initAudio() {
+            if (audioCtx) return;
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            startBreathing();
+        }
+
+        function startBreathing() {
+            if (!audioCtx) return;
+
+            // Create breathing noise with gentle oscillation
+            breathingGain = audioCtx.createGain();
+            breathingGain.gain.value = 0.03;
+            breathingGain.connect(audioCtx.destination);
+
+            // White noise for breathing
+            const bufferSize = audioCtx.sampleRate * 2;
+            const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const output = noiseBuffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                output[i] = Math.random() * 2 - 1;
+            }
+
+            const whiteNoise = audioCtx.createBufferSource();
+            whiteNoise.buffer = noiseBuffer;
+            whiteNoise.loop = true;
+
+            // Filter for breathing sound
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = 400;
+
+            whiteNoise.connect(filter);
+            filter.connect(breathingGain);
+            whiteNoise.start();
+
+            // Rhythmic breathing modulation
+            function breatheCycle() {
+                if (!audioCtx || !breathingGain) return;
+                const now = audioCtx.currentTime;
+                breathingGain.gain.setValueAtTime(0.02, now);
+                breathingGain.gain.linearRampToValueAtTime(0.06, now + 1.5);
+                breathingGain.gain.linearRampToValueAtTime(0.02, now + 3);
+                setTimeout(breatheCycle, 3000);
+            }
+            breatheCycle();
+        }
+
+        function playRockPickup() {
+            if (!audioCtx) return;
+
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.1);
+            osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.2);
+
+            gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+
+            osc.start(audioCtx.currentTime);
+            osc.stop(audioCtx.currentTime + 0.3);
+        }
+
+        function playLanderArrive() {
+            if (!audioCtx) return;
+
+            // Radio beep sound
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            osc.type = 'sine';
+            osc.frequency.value = 880;
+
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime + 0.1);
+            gain.gain.setValueAtTime(0, audioCtx.currentTime + 0.12);
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime + 0.2);
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime + 0.3);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
+
+            osc.start(audioCtx.currentTime);
+            osc.stop(audioCtx.currentTime + 0.4);
+        }
+
+        function playDeposit() {
+            if (!audioCtx) return;
+
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 0.15);
+
+            gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
+
+            osc.start(audioCtx.currentTime);
+            osc.stop(audioCtx.currentTime + 0.25);
+        }
+
+        function playAlienSpeak() {
+            if (!audioCtx) return;
+
+            // Quirky alien voice - series of beeps and boops
+            const notes = [300, 500, 400, 600, 350, 450];
+            notes.forEach((freq, i) => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                osc.type = 'square';
+                osc.frequency.value = freq + Math.random() * 100;
+
+                const startTime = audioCtx.currentTime + i * 0.08;
+                gain.gain.setValueAtTime(0, startTime);
+                gain.gain.linearRampToValueAtTime(0.08, startTime + 0.02);
+                gain.gain.linearRampToValueAtTime(0, startTime + 0.07);
+
+                osc.start(startTime);
+                osc.stop(startTime + 0.08);
+            });
+        }
+
+        // Alien gibberish generator
+        const alienWords = ['zorp', 'blip', 'meep', 'nanu', 'glorp', 'beebo', 'wibble', 'zoink', 'bloop', 'skree'];
+        function getAlienSpeech() {
+            const wordCount = 2 + Math.floor(Math.random() * 3);
+            let speech = '';
+            for (let i = 0; i < wordCount; i++) {
+                speech += alienWords[Math.floor(Math.random() * alienWords.length)];
+                if (i < wordCount - 1) speech += ' ';
+            }
+            return speech + '!';
+        }
+
+        // Monochrome palette
+        const colors = {
+            sky: '#000000',
+            surfaceLight: '#C8C8C8',
+            surfaceMid: '#A0A0A0',
+            surfaceDark: '#707070',
+            surfaceDeep: '#404040',
+            mountainFar: '#606060',
+            mountainMid: '#505050',
+            mountainNear: '#454545',
+            suitBright: '#FFFFFF',
+            suitLight: '#F0F0E8',  // Slightly cream
+            suitMid: '#D8D8D0',
+            suitDark: '#888888',
+            suitShadow: '#505050',
+            helmetWhite: '#FFFFFF',
+            helmetGrey: '#D0D0D0',
+            visorDark: '#151515',
+            visorReflect: '#303030',
+            plssLight: '#D0D0D0',
+            plssDark: '#606060',
+            bootRubber: '#3D3D3D',
+            bootTread: '#2A2A2A',
+            gloveGray: '#A0A0A0'
+        };
+
+        // Rock types from design doc
+        const rockTypes = [
+            { name: 'Basalt', points: 10, color: '#505050', rarity: 0.5 },
+            { name: 'Anorthosite', points: 25, color: '#B0B0B0', rarity: 0.25 },
+            { name: 'Breccia', points: 50, color: '#787060', rarity: 0.15 },
+            { name: 'Orange Soil', points: 100, color: '#C08040', rarity: 0.07 },
+            { name: 'Genesis Rock', points: 250, color: '#E0E8F0', rarity: 0.025 },
+            { name: 'Meteorite', points: 500, color: '#202028', rarity: 0.005 }
+        ];
+
+        const state = {
+            astronaut: {
+                x: 0,
+                y: 0,
+                vx: 0,
+                vy: 0,
+                facingRight: true,
+                flipProgress: 1,
+                isWalking: false,
+                moveDirection: 0,
+                stepFoot: 0,
+                airborne: false,
+                hopProgress: 0,
+                hopVariation: 1.0,
+                hopSpeedVar: 1.0,
+                armWobble: 0,
+                bodySquash: 1.0,
+                landingVelocity: 0,
+                leftHipAngle: 0,
+                leftKneeAngle: 0,
+                rightHipAngle: 0,
+                rightKneeAngle: 0,
+                leftShoulderAngle: 0,
+                leftElbowAngle: 0,
+                rightShoulderAngle: 0,
+                rightElbowAngle: 0,
+                bodyTilt: 0,
+                bodyBob: 0
+            },
+
+            // Game state
+            oxygen: 100,
+            carrying: [],  // Rocks being carried (max 3)
+            score: 0,
+            atLander: false,
+            wasAtLander: false,
+
+            lander: { x: 0, y: 0 },
+            rocks: [],
+            finger: { x: null, y: null, screenX: null, active: false },
+            camera: { x: 0 },
+            stars: [],
+            footprints: [],
+            dustParticles: [],
+            groundY: 0,
+            gravel: [],  // Static gravel positions
+
+            // Message system
+            message: '',
+            messageTimer: 0,
+
+            // Oxygen warning
+            oxygenWarningShown: false,
+
+            // Deposit HUD
+            depositHUDTimer: 0,
+            depositHUDFading: false,
+
+            // Aliens (can be a group of 1-3)
+            aliens: [],
+            alienCooldown: 0,
+            alienSpeech: '',
+            alienSpeechTimer: 0,
+            alienSpeechX: 0
+        };
+
+        // UI elements
+        const o2Fill = document.getElementById('o2Fill');
+        const carryingEl = document.getElementById('carrying');
+        const scoreEl = document.getElementById('score');
+        const landerArrow = document.getElementById('landerArrow');
+        const landerDist = document.getElementById('landerDist');
+        const messageEl = document.getElementById('message');
+        const oxygenWarningEl = document.getElementById('oxygenWarning');
+        const depositHUDEl = document.getElementById('depositHUD');
+        const depositListEl = document.getElementById('depositList');
+        const depositTotalEl = document.getElementById('depositTotal');
+
+        function showMessage(text, duration = 2000) {
+            state.message = text;
+            state.messageTimer = duration;
+            messageEl.textContent = text;
+            messageEl.classList.add('show');
+        }
+
+        function spawnRock(x) {
+            // Pick rock type based on rarity
+            const roll = Math.random();
+            let cumulative = 0;
+            let type = rockTypes[0];
+            for (const rt of rockTypes) {
+                cumulative += rt.rarity;
+                if (roll < cumulative) {
+                    type = rt;
+                    break;
+                }
+            }
+
+            return {
+                x: x,
+                yOffset: Math.random() * 40,  // Scatter rocks on ground plane (0-40 pixels below horizon)
+                type: type,
+                size: 10 + Math.random() * 10,
+                rotation: Math.random() * Math.PI * 2,
+                collected: false
+            };
+        }
+
+        function initRocks() {
+            state.rocks = [];
+            state.rocksGeneratedLeft = -500;
+            state.rocksGeneratedRight = 500;
+            // Initial rocks near lander
+            generateRocksInRange(-500, 500);
+        }
+
+        function generateRocksInRange(fromX, toX) {
+            // Moderate rock spawning - every 60-150 pixels on average
+            for (let x = fromX; x < toX; x += 60 + Math.random() * 90) {
+                // Random chance to spawn (60% chance)
+                if (Math.random() > 0.4) {
+                    // Skip rocks too close to lander
+                    if (Math.abs(x - state.lander.x) > 200) {
+                        state.rocks.push(spawnRock(x + (Math.random() - 0.5) * 50));
+                    }
+                }
+            }
+        }
+
+        function expandRocksIfNeeded() {
+            const astro = state.astronaut;
+            const expandDistance = 800;  // Generate rocks this far ahead
+
+            // Expand right
+            if (astro.x + expandDistance > state.rocksGeneratedRight) {
+                const newRight = astro.x + expandDistance + 500;
+                generateRocksInRange(state.rocksGeneratedRight, newRight);
+                state.rocksGeneratedRight = newRight;
+            }
+
+            // Expand left
+            if (astro.x - expandDistance < state.rocksGeneratedLeft) {
+                const newLeft = astro.x - expandDistance - 500;
+                generateRocksInRange(newLeft, state.rocksGeneratedLeft);
+                state.rocksGeneratedLeft = newLeft;
+            }
+        }
+
+        function initStars() {
+            state.stars = [];
+            for (let i = 0; i < 200; i++) {
+                // Color distribution: 80% white, 5% each for red, yellow, blue, green
+                let color = '#FFFFFF';
+                const colorRoll = Math.random();
+                if (colorRoll > 0.95) {
+                    color = '#FFB0B0';  // Red tint
+                } else if (colorRoll > 0.90) {
+                    color = '#FFFFB0';  // Yellow tint
+                } else if (colorRoll > 0.85) {
+                    color = '#B0B0FF';  // Blue tint
+                } else if (colorRoll > 0.80) {
+                    color = '#B0FFB0';  // Green tint
+                }
+
+                state.stars.push({
+                    x: Math.random() * 10000 - 5000,
+                    y: Math.random() * canvas.height * 0.5,
+                    size: Math.random() * 1.8 + 0.3,
+                    brightness: Math.random() * 0.6 + 0.4,
+                    twinkleSpeed: Math.random() * 2 + 1,
+                    twinkleOffset: Math.random() * Math.PI * 2,
+                    color: color
+                });
+            }
+        }
+
+        function initGravel() {
+            state.gravel = [];
+            // Generate fixed gravel positions in world coordinates
+            for (let wx = -5000; wx < 8000; wx += 15 + Math.random() * 30) {
+                state.gravel.push({
+                    x: wx,
+                    y: Math.random() * 60,
+                    size: 1 + Math.random() * 3
+                });
+            }
+        }
+
+        function init() {
+            state.groundY = canvas.height * 0.75;
+            state.lander.x = 0;
+            state.lander.y = state.groundY;
+            state.astronaut.x = state.lander.x + 250;
+            state.astronaut.y = state.groundY;
+            state.camera.x = state.astronaut.x - canvas.width / 2;
+            state.oxygen = 100;
+            state.carrying = [];
+            state.score = 0;
+            state.atLander = false;
+            state.wasAtLander = true;  // Start at lander
+            initStars();
+            initGravel();
+            initRocks();
+            showMessage('Collect moon rocks and return to the Lunar Module!', 3000);
+        }
+
+        // Input
+        function handleStart(x, y) {
+            initAudio();  // Start audio on first interaction
+            state.finger.active = true;
+            state.finger.screenX = x;
+            state.finger.y = y;
+
+            // Check for rock tap
+            const worldX = x + state.camera.x;
+            tryCollectRock(worldX, y);
+        }
+
+        function handleMove(x, y) {
+            if (state.finger.active) {
+                state.finger.screenX = x;
+                state.finger.y = y;
+            }
+        }
+
+        function handleEnd() {
+            state.finger.active = false;
+        }
+
+        function updateFingerWorldPosition() {
+            if (state.finger.active && state.finger.screenX !== null) {
+                state.finger.x = state.finger.screenX + state.camera.x;
+            }
+        }
+
+        canvas.addEventListener('mousedown', e => handleStart(e.clientX, e.clientY));
+        canvas.addEventListener('mousemove', e => handleMove(e.clientX, e.clientY));
+        canvas.addEventListener('mouseup', handleEnd);
+        canvas.addEventListener('mouseleave', handleEnd);
+        canvas.addEventListener('touchstart', e => { e.preventDefault(); handleStart(e.touches[0].clientX, e.touches[0].clientY); });
+        canvas.addEventListener('touchmove', e => { e.preventDefault(); handleMove(e.touches[0].clientX, e.touches[0].clientY); });
+        canvas.addEventListener('touchend', handleEnd);
+
+        function tryCollectRock(worldX, screenY) {
+            // Manual tap collection (legacy, still works)
+            const astro = state.astronaut;
+
+            for (const rock of state.rocks) {
+                if (rock.collected) continue;
+
+                const dist = Math.abs(rock.x - astro.x);
+                if (dist < 300) {
+                    const tapDist = Math.abs(worldX - rock.x);
+                    if (tapDist < 50) {
+                        rock.collected = true;
+                        state.carrying.push(rock.type);
+                        playRockPickup();
+                        showMessage(`Collected ${rock.type.name}! (+${rock.type.points} pts)`, 1500);
+                        return;
+                    }
+                }
+            }
+        }
+
+        function autoCollectRocks() {
+            const astro = state.astronaut;
+
+            for (const rock of state.rocks) {
+                if (rock.collected) continue;
+
+                const dist = Math.abs(rock.x - astro.x);
+
+                // Auto-collect when running over rocks (within 60px)
+                if (dist < 60) {
+                    rock.collected = true;
+                    state.carrying.push(rock.type);
+                    playRockPickup();
+
+                    // Show quick message for rare rocks only
+                    if (rock.type.points >= 50) {
+                        showMessage(`${rock.type.name}! +${rock.type.points}`, 1000);
+                    }
+                }
+            }
+        }
+
+        function updateAlien(dt) {
+            const astro = state.astronaut;
+
+            // Decrease cooldown
+            if (state.alienCooldown > 0) {
+                state.alienCooldown -= dt;
+            }
+
+            // Decrease speech timer
+            if (state.alienSpeechTimer > 0) {
+                state.alienSpeechTimer -= dt;
+            }
+
+            // Maybe spawn a group of aliens (rare - about every 30-60 seconds on average)
+            if (state.aliens.length === 0 && state.alienCooldown <= 0 && Math.random() < 0.002) {
+                // Spawn 1-3 aliens ahead of the astronaut
+                const direction = astro.vx >= 0 ? 1 : -1;
+                const spawnDist = 400 + Math.random() * 300;
+                const baseX = astro.x + direction * spawnDist;
+                const groupSize = 1 + Math.floor(Math.random() * 3);  // 1-3 aliens
+
+                for (let i = 0; i < groupSize; i++) {
+                    state.aliens.push({
+                        x: baseX + (i - 1) * (30 + Math.random() * 20),
+                        vx: 0,
+                        state: 'idle',  // idle, scared, running
+                        facingRight: Math.random() > 0.5,
+                        bouncePhase: Math.random() * Math.PI * 2,
+                        idleTimer: 2 + Math.random() * 3,
+                        scale: 0.7 + Math.random() * 0.6  // Varying sizes (0.7 to 1.3)
+                    });
+                }
+            }
+
+            // Update existing aliens
+            let allOffscreen = true;
+            let groupScared = false;
+
+            for (const alien of state.aliens) {
+                const distToAstro = Math.abs(alien.x - astro.x);
+
+                alien.bouncePhase += dt * 8;
+
+                if (alien.state === 'idle') {
+                    alien.idleTimer -= dt;
+
+                    // Get scared if astronaut gets close
+                    if (distToAstro < 200) {
+                        groupScared = true;
+                        alien.state = 'scared';
+                        alien.facingRight = alien.x > astro.x;  // Face away from astronaut
+                    }
+                    // Or just wander off after a while
+                    else if (alien.idleTimer <= 0) {
+                        alien.state = 'running';
+                        alien.facingRight = Math.random() > 0.5;
+                    }
+                }
+                else if (alien.state === 'scared') {
+                    // Brief pause while speaking, then run
+                    if (state.alienSpeechTimer <= 0.8) {
+                        alien.state = 'running';
+                    }
+                }
+                else if (alien.state === 'running') {
+                    // Run away fast! Smaller ones run faster
+                    const runSpeed = 5 + (1.3 - alien.scale) * 4;
+                    alien.vx = alien.facingRight ? runSpeed : -runSpeed;
+                    alien.x += alien.vx;
+                }
+
+                // Check if still on screen
+                const screenX = alien.x - state.camera.x;
+                if (screenX >= -100 && screenX <= canvas.width + 100) {
+                    allOffscreen = false;
+                }
+            }
+
+            // Trigger group speech when any gets scared
+            if (groupScared && state.alienSpeechTimer <= 0) {
+                state.alienSpeech = getAlienSpeech();
+                state.alienSpeechTimer = 1.5;
+                // Find the middle alien for speech bubble position
+                if (state.aliens.length > 0) {
+                    state.alienSpeechX = state.aliens[Math.floor(state.aliens.length / 2)].x;
+                }
+                playAlienSpeak();
+                // Scare all of them
+                for (const alien of state.aliens) {
+                    if (alien.state === 'idle') {
+                        alien.state = 'scared';
+                        alien.facingRight = alien.x > astro.x;
+                    }
+                }
+            }
+
+            // Remove all aliens when they're all off screen
+            if (state.aliens.length > 0 && allOffscreen) {
+                state.aliens = [];
+                state.alienCooldown = 15 + Math.random() * 20;  // 15-35 second cooldown
+            }
+        }
+
+        function checkLanderInteraction() {
+            const astro = state.astronaut;
+            const dist = Math.abs(astro.x - state.lander.x);
+
+            // Generous interaction zone - can deposit while jumping over!
+            state.atLander = dist < 250;
+
+            // Play arrival sound when first reaching lander
+            if (state.atLander && !state.wasAtLander) {
+                playLanderArrive();
+            }
+            state.wasAtLander = state.atLander;
+
+            if (state.atLander) {
+                // At lander - refill O2 (fast refill)
+                if (state.oxygen < 100) {
+                    state.oxygen = Math.min(100, state.oxygen + 5);
+                }
+
+                // Deposit ALL rocks at once - slam dunk style!
+                if (state.carrying.length > 0) {
+                    let totalPoints = 0;
+                    const rockCount = state.carrying.length;
+
+                    // Count rocks by type for HUD display
+                    const rockBreakdown = {};
+                    while (state.carrying.length > 0) {
+                        const rock = state.carrying.shift();
+                        totalPoints += rock.points;
+                        if (!rockBreakdown[rock.name]) {
+                            rockBreakdown[rock.name] = { count: 0, points: rock.points, total: 0 };
+                        }
+                        rockBreakdown[rock.name].count++;
+                        rockBreakdown[rock.name].total += rock.points;
+                    }
+
+                    state.score += totalPoints;
+                    playDeposit();
+
+                    // Show deposit HUD
+                    showDepositHUD(rockBreakdown, totalPoints);
+
+                    // Exciting message for big deposits
+                    if (rockCount >= 5) {
+                        showMessage(`SLAM DUNK! ${rockCount} rocks = +${totalPoints} pts!`, 2000);
+                    } else if (rockCount > 1) {
+                        showMessage(`Deposited ${rockCount} rocks! +${totalPoints} pts`, 1500);
+                    } else {
+                        showMessage(`+${totalPoints} pts! Score: ${state.score}`, 1200);
+                    }
+                }
+            }
+        }
+
+        function showDepositHUD(breakdown, total) {
+            // Clear previous timer
+            if (state.depositHUDTimer) {
+                clearTimeout(state.depositHUDTimer);
+            }
+
+            // Sort by total score from each type (highest first)
+            const sorted = Object.entries(breakdown).sort((a, b) => b[1].total - a[1].total);
+
+            // Build the list HTML
+            let html = '';
+            for (const [name, data] of sorted) {
+                html += `<div class="hud-row">
+                    <span class="rock-name">${name}</span>
+                    <span class="rock-count">x${data.count}</span>
+                    <span class="rock-points">+${data.total}</span>
+                </div>`;
+            }
+            depositListEl.innerHTML = html;
+            depositTotalEl.textContent = `+${total}`;
+
+            // Show HUD
+            depositHUDEl.classList.remove('fade');
+            depositHUDEl.classList.add('show');
+
+            // Start fade after 4 seconds, fully hidden after 5
+            state.depositHUDTimer = setTimeout(() => {
+                depositHUDEl.classList.add('fade');
+                state.depositHUDTimer = setTimeout(() => {
+                    depositHUDEl.classList.remove('show');
+                    depositHUDEl.classList.remove('fade');
+                }, 1000);
+            }, 4000);
+        }
+
+        function addDust(x, y, vx, intensity = 1) {
+            const count = Math.floor(3 + intensity * 6);
+            for (let i = 0; i < count; i++) {
+                const spread = 10 + intensity * 15;
+                const speed = 0.8 + intensity * 1.5;
+                state.dustParticles.push({
+                    x: x + (Math.random() - 0.5) * spread,
+                    y: y - Math.random() * 3,
+                    vx: vx * 0.15 + (Math.random() - 0.5) * speed * 2,
+                    vy: -Math.random() * speed - 0.3,
+                    life: 0.7 + intensity * 0.5,
+                    size: Math.random() * (2 + intensity * 2) + 1.5
+                });
+            }
+        }
+
+        function updateDust(dt) {
+            for (let i = state.dustParticles.length - 1; i >= 0; i--) {
+                const d = state.dustParticles[i];
+                d.x += d.vx;
+                d.y += d.vy;
+                d.vy += 0.015;
+                d.life -= dt * 0.7;
+                if (d.life <= 0) state.dustParticles.splice(i, 1);
+            }
+        }
+
+        function addFootprint(x, y, isLeft, facingRight) {
+            if (state.footprints.length > 150) state.footprints.shift();
+
+            // Add variation to position
+            const baseOffset = isLeft ? -10 : 10;
+            const offsetX = (facingRight ? baseOffset : -baseOffset) + (Math.random() - 0.5) * 8;
+            const offsetY = (Math.random() - 0.5) * 6;  // Slight Y variation
+
+            // Random angle variation
+            const baseAngle = facingRight ? 0.15 : -0.15;
+            const angleVariation = (Math.random() - 0.5) * 0.2;
+
+            // Random size variation
+            const sizeScale = 0.85 + Math.random() * 0.3;
+
+            state.footprints.push({
+                x: x + offsetX,
+                y: y + offsetY,
+                isLeft,
+                rotation: baseAngle + angleVariation,
+                scale: sizeScale,
+                life: 1.0  // Starts fully visible, fades to 0
+            });
+        }
+
+        function updateOxygen(dt) {
+            const astro = state.astronaut;
+            const distToLander = Math.abs(astro.x - state.lander.x);
+
+            // Don't drain O2 when at lander
+            if (distToLander < 250) {
+                // Reset warning when refueled
+                if (state.oxygen >= 60) {
+                    state.oxygenWarningShown = false;
+                }
+                return;
+            }
+
+            // Drain rate based on activity
+            let drainRate = 0.8;  // Base rate per second
+            if (astro.isWalking || astro.airborne) {
+                drainRate = 1.5;  // Faster when moving
+            }
+
+            state.oxygen = Math.max(0, state.oxygen - drainRate * dt);
+
+            // Prominent warning at 55%
+            if (state.oxygen <= 55 && !state.oxygenWarningShown) {
+                state.oxygenWarningShown = true;
+                showOxygenWarning();
+            }
+
+            // Warnings
+            if (state.oxygen <= 25 && state.oxygen > 24.5) {
+                showMessage('WARNING: O2 LOW - Return to Lunar Module!', 2000);
+            }
+            if (state.oxygen <= 10 && state.oxygen > 9.5) {
+                showMessage('CRITICAL: O2 DEPLETED - Return NOW!', 2000);
+            }
+            if (state.oxygen <= 0) {
+                showMessage('MISSION FAILED: Out of oxygen', 3000);
+                // Reset after delay
+                setTimeout(() => {
+                    state.astronaut.x = state.lander.x + 250;
+                    state.oxygen = 100;
+                    state.carrying = [];
+                    state.oxygenWarningShown = false;
+                }, 3000);
+            }
+        }
+
+        function showOxygenWarning() {
+            oxygenWarningEl.classList.remove('show');
+            // Force reflow to restart animation
+            void oxygenWarningEl.offsetWidth;
+            oxygenWarningEl.classList.add('show');
+            // Remove class after animation completes
+            setTimeout(() => {
+                oxygenWarningEl.classList.remove('show');
+            }, 3000);
+        }
+
+        function updateAstronaut(dt) {
+            const astro = state.astronaut;
+            const finger = state.finger;
+            const groundY = state.groundY;
+
+            let wantToWalk = false;
+            let walkDirection = 0;
+            let hopIntensity = 1.0;
+
+            // Don't move if out of oxygen
+            if (state.oxygen <= 0) {
+                astro.vx *= 0.9;
+                astro.isWalking = false;
+            } else if (finger.active && finger.x !== null) {
+                const dx = finger.x - astro.x;
+                const fingerYNorm = finger.y / canvas.height;
+                hopIntensity = 4.5 - fingerYNorm * 4.25;
+                hopIntensity = Math.max(0.25, Math.min(5.0, hopIntensity));
+
+                const moveThreshold = 15;
+
+                if (Math.abs(dx) > moveThreshold) {
+                    wantToWalk = true;
+                    const fingerDirection = dx > 0 ? 1 : -1;
+
+                    if (!astro.airborne) {
+                        walkDirection = fingerDirection;
+                        const shouldFaceRight = walkDirection > 0;
+                        if (shouldFaceRight !== astro.facingRight) {
+                            astro.facingRight = shouldFaceRight;
+                            astro.flipProgress = 0;
+                        }
+                    } else {
+                        walkDirection = astro.facingRight ? 1 : -1;
+                    }
+                }
+            }
+
+            const moonGravity = 0.2;
+            const baseHopStrength = 4.0;
+            const baseWalkSpeed = 7.0;  // Faster base speed
+
+            if (wantToWalk) {
+                astro.isWalking = true;
+
+                // Speed boost when jumping high (hopIntensity > 2)
+                const speedBoost = hopIntensity > 2 ? 1 + (hopIntensity - 2) * 0.3 : 1;
+                const targetVx = walkDirection * baseWalkSpeed * (0.6 + hopIntensity * 0.35) * speedBoost;
+                astro.vx += (targetVx - astro.vx) * 0.25;
+
+                if (!astro.airborne) {
+                    astro.hopVariation = hopIntensity * (0.9 + Math.random() * 0.2);
+                    astro.vy = -baseHopStrength * astro.hopVariation;
+                    astro.airborne = true;
+                    astro.stepFoot = 1 - astro.stepFoot;
+                    astro.hopProgress = 0;
+                    addDust(astro.x, groundY, astro.vx, astro.hopVariation * 0.5);
+
+                    // Extra horizontal boost for big jumps
+                    if (hopIntensity > 2.5) {
+                        astro.vx += walkDirection * hopIntensity * 0.8;
+                    }
+                }
+            } else {
+                if (astro.airborne) {
+                    astro.vx *= 0.98;
+                } else {
+                    astro.isWalking = false;
+                    astro.vx *= 0.85;
+                    if (Math.abs(astro.vx) < 0.1) astro.vx = 0;
+                }
+            }
+
+            if (astro.airborne) {
+                astro.vy += moonGravity;
+                const hopDurationFrames = 35 * astro.hopVariation;
+                const progressRate = 1.0 / Math.max(10, hopDurationFrames);
+                astro.hopProgress = Math.min(1, astro.hopProgress + progressRate);
+
+                if (astro.vy < 0.5 && astro.vy > -0.5) {
+                    astro.bodySquash = 1.04;
+                } else {
+                    astro.bodySquash += (1.0 - astro.bodySquash) * 0.1;
+                }
+                astro.landingVelocity = astro.vy;
+            }
+
+            astro.x += astro.vx;
+            astro.y += astro.vy;
+
+            if (astro.y >= groundY) {
+                astro.y = groundY;
+                if (astro.airborne) {
+                    const landIntensity = Math.min(1.5, Math.abs(astro.landingVelocity) / 3);
+                    addDust(astro.x, groundY, astro.vx, landIntensity);
+                    astro.bodySquash = 0.88 - landIntensity * 0.05;
+                    astro.bodyBob = landIntensity * 8;
+
+                    // Add footprints on landing (both feet)
+                    addFootprint(astro.x, groundY, true, astro.facingRight);   // Left foot
+                    addFootprint(astro.x, groundY, false, astro.facingRight);  // Right foot
+
+                    astro.airborne = false;
+                    astro.vy = 0;
+                    astro.hopProgress = 0;
+                }
+            }
+
+            astro.bodyBob *= 0.75;
+            astro.bodySquash += (1.0 - astro.bodySquash) * 0.15;
+
+            if (astro.flipProgress < 1) {
+                astro.flipProgress += dt * 5;
+                if (astro.flipProgress > 1) astro.flipProgress = 1;
+            }
+
+            updateLimbAngles(astro, dt);
+        }
+
+        function updateLimbAngles(astro, dt) {
+            const foot = astro.stepFoot;
+            const hv = Math.min(astro.hopVariation || 1.0, 3.0);
+
+            if (astro.airborne) {
+                const hp = astro.hopProgress;
+                const spread = Math.sin(hp * Math.PI);
+
+                const legSign = foot === 0 ? 1 : -1;
+                const legSpread = spread * 0.12;
+                astro.leftHipAngle = -legSpread * legSign;
+                astro.rightHipAngle = legSpread * legSign;
+
+                const kneeBend = 0.6 + spread * 0.6;
+                astro.leftKneeAngle = kneeBend;
+                astro.rightKneeAngle = kneeBend;
+
+                const armSwing = spread * 0.4;
+                const armLift = spread * 0.2;
+
+                if (foot === 0) {
+                    astro.leftShoulderAngle = 0.1 + armSwing - armLift;
+                    astro.rightShoulderAngle = -0.3 - armSwing - armLift;
+                } else {
+                    astro.leftShoulderAngle = -0.3 - armSwing - armLift;
+                    astro.rightShoulderAngle = 0.1 + armSwing - armLift;
+                }
+
+                astro.leftElbowAngle = -0.7;
+                astro.rightElbowAngle = -0.7;
+
+            } else if (astro.isWalking) {
+                astro.leftHipAngle = 0;
+                astro.rightHipAngle = 0;
+                astro.leftKneeAngle = 0.6;
+                astro.rightKneeAngle = 0.6;
+                astro.leftShoulderAngle = -0.15;
+                astro.rightShoulderAngle = -0.15;
+                astro.leftElbowAngle = -0.7;
+                astro.rightElbowAngle = -0.7;
+
+            } else {
+                const decay = 0.88;
+                const breathe = Math.sin(Date.now() * 0.0015) * 0.025;
+                const sway = Math.sin(Date.now() * 0.001) * 0.015;
+
+                astro.leftHipAngle *= decay;
+                astro.rightHipAngle *= decay;
+                astro.leftKneeAngle = astro.leftKneeAngle * decay + 0.12 * (1 - decay);
+                astro.rightKneeAngle = astro.rightKneeAngle * decay + 0.12 * (1 - decay);
+                astro.leftShoulderAngle = astro.leftShoulderAngle * decay + (0.38 + sway) * (1 - decay);
+                astro.rightShoulderAngle = astro.rightShoulderAngle * decay + (0.38 - sway) * (1 - decay);
+                astro.leftElbowAngle = astro.leftElbowAngle * decay + (-0.9 + breathe) * (1 - decay);
+                astro.rightElbowAngle = astro.rightElbowAngle * decay + (-0.9 - breathe) * (1 - decay);
+            }
+        }
+
+        function updateCamera() {
+            const targetX = state.astronaut.x - canvas.width / 2;
+            state.camera.x += (targetX - state.camera.x) * 0.05;
+        }
+
+        function updateUI() {
+            // O2 bar
+            o2Fill.style.width = state.oxygen + '%';
+            o2Fill.className = 'o2-fill';
+            if (state.oxygen <= 10) {
+                o2Fill.classList.add('critical');
+            } else if (state.oxygen <= 25) {
+                o2Fill.classList.add('warning');
+            }
+
+            // Carrying count
+            carryingEl.textContent = state.carrying.length;
+
+            // Score
+            scoreEl.textContent = state.score;
+
+            // Lander direction and distance
+            const dx = state.lander.x - state.astronaut.x;
+            const dist = Math.abs(dx);
+            landerDist.textContent = Math.round(dist / 10);  // Convert to "meters"
+
+            if (dist < 250) {
+                landerArrow.innerHTML = '&#9679;';  // At lander
+            } else if (dx < 0) {
+                landerArrow.innerHTML = '&#9664;';  // Left arrow
+            } else {
+                landerArrow.innerHTML = '&#9654;';  // Right arrow
+            }
+
+            // Message timer
+            if (state.messageTimer > 0) {
+                state.messageTimer -= 16;
+                if (state.messageTimer <= 0) {
+                    messageEl.classList.remove('show');
+                }
+            }
+        }
+
+        // === DRAWING ===
+
+        function drawStars() {
+            const time = Date.now() * 0.001;
+            state.stars.forEach(star => {
+                const screenX = star.x - state.camera.x * 0.02;
+                if (screenX < -5 || screenX > canvas.width + 5) return;
+
+                // Twinkle effect
+                const twinkle = Math.sin(time * star.twinkleSpeed + star.twinkleOffset) * 0.3 + 0.7;
+                const alpha = star.brightness * twinkle;
+
+                // Parse color and apply alpha
+                ctx.fillStyle = star.color;
+                ctx.globalAlpha = alpha;
+                ctx.beginPath();
+                ctx.arc(screenX, star.y, star.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1;
+            });
+        }
+
+        function drawEarth() {
+            // Draw Earth in the sky
+            const earthX = canvas.width * 0.8 - state.camera.x * 0.01;
+            const earthY = canvas.height * 0.15;
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(earthX, earthY, 25, 0, Math.PI * 2);
+            ctx.fillStyle = '#4A90D9';
+            ctx.fill();
+
+            // Land masses
+            ctx.fillStyle = '#3D7A3D';
+            ctx.beginPath();
+            ctx.arc(earthX - 5, earthY - 5, 12, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(earthX + 8, earthY + 8, 8, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        function drawMountains() {
+            const groundY = state.groundY;
+
+            ctx.fillStyle = colors.mountainFar;
+            ctx.beginPath();
+            ctx.moveTo(0, groundY - 30);
+            for (let x = 0; x <= canvas.width; x += 50) {
+                const worldX = x + state.camera.x * 0.1;
+                const h = Math.sin(worldX * 0.003) * 40 + Math.sin(worldX * 0.007) * 25 + 50;
+                ctx.lineTo(x, groundY - h);
+            }
+            ctx.lineTo(canvas.width, groundY);
+            ctx.lineTo(0, groundY);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = colors.mountainMid;
+            ctx.beginPath();
+            ctx.moveTo(0, groundY - 20);
+            for (let x = 0; x <= canvas.width; x += 40) {
+                const worldX = x + state.camera.x * 0.2;
+                const h = Math.sin(worldX * 0.005 + 1) * 30 + Math.sin(worldX * 0.01) * 20 + 35;
+                ctx.lineTo(x, groundY - h);
+            }
+            ctx.lineTo(canvas.width, groundY);
+            ctx.lineTo(0, groundY);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = colors.mountainNear;
+            ctx.beginPath();
+            ctx.moveTo(0, groundY - 10);
+            for (let x = 0; x <= canvas.width; x += 30) {
+                const worldX = x + state.camera.x * 0.35;
+                const h = Math.sin(worldX * 0.008 + 2) * 20 + Math.sin(worldX * 0.015) * 12 + 18;
+                ctx.lineTo(x, groundY - h);
+            }
+            ctx.lineTo(canvas.width, groundY);
+            ctx.lineTo(0, groundY);
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        function drawSurface() {
+            const groundY = state.groundY;
+            const grad = ctx.createLinearGradient(0, groundY, 0, canvas.height);
+            grad.addColorStop(0, colors.surfaceLight);
+            grad.addColorStop(0.2, colors.surfaceMid);
+            grad.addColorStop(0.6, colors.surfaceDark);
+            grad.addColorStop(1, colors.surfaceDeep);
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);
+
+            // Static gravel - fixed in world coordinates
+            ctx.fillStyle = colors.surfaceDark;
+            state.gravel.forEach(g => {
+                const sx = g.x - state.camera.x;
+                if (sx < -10 || sx > canvas.width + 10) return;
+                ctx.beginPath();
+                ctx.arc(sx, groundY + 8 + g.y, g.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        function updateFootprints(dt) {
+            // Fade footprints over time
+            for (let i = state.footprints.length - 1; i >= 0; i--) {
+                state.footprints[i].life -= dt * 0.03;  // Fade over ~30 seconds
+                if (state.footprints[i].life <= 0) {
+                    state.footprints.splice(i, 1);
+                }
+            }
+        }
+
+        function drawFootprints() {
+            state.footprints.forEach(fp => {
+                const sx = fp.x - state.camera.x;
+                if (sx < -25 || sx > canvas.width + 25) return;
+
+                ctx.save();
+                // Position at sole level (boots extend well below groundY)
+                ctx.translate(sx, fp.y + 87);
+                ctx.scale(fp.scale || 1, fp.scale || 1);
+
+                // Use life for alpha (fade out)
+                const alpha = Math.max(0, fp.life || 1);
+
+                // Footprint dimensions - foreshortened for side view perspective
+                const width = 16;
+                const height = 5;
+
+                // Outer impression (shadow/depression)
+                ctx.fillStyle = `rgba(60, 60, 60, ${0.25 * alpha})`;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, width + 2, height + 1, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Ribbed tread pattern - draw as filled rectangles for visibility
+                const ribCount = 9;
+                const ribSpacing = (width * 2) / (ribCount + 1);
+                for (let i = 1; i <= ribCount; i++) {
+                    const x = -width + i * ribSpacing;
+                    const ribHeight = Math.sqrt(Math.max(0, 1 - (x * x) / (width * width))) * height * 2;
+                    if (ribHeight > 1) {
+                        ctx.fillStyle = `rgba(50, 50, 50, ${0.4 * alpha})`;
+                        ctx.fillRect(x - 1, -ribHeight / 2, 2, ribHeight);
+                    }
+                }
+
+                ctx.restore();
+            });
+        }
+
+        function drawDust() {
+            state.dustParticles.forEach(d => {
+                const sx = d.x - state.camera.x;
+                ctx.fillStyle = `rgba(180, 180, 180, ${d.life * 0.6})`;
+                ctx.beginPath();
+                ctx.arc(sx, d.y, d.size * d.life, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        function drawRocks() {
+            const astro = state.astronaut;
+            const groundY = state.groundY;
+
+            state.rocks.forEach(rock => {
+                if (rock.collected) return;
+
+                const sx = rock.x - state.camera.x;
+                if (sx < -50 || sx > canvas.width + 50) return;
+
+                const dist = Math.abs(rock.x - astro.x);
+                const canCollect = dist < 300;
+
+                // Draw rocks on the ground plane, scattered with Y variation
+                // yOffset moves them below the horizon line onto the visible ground
+                const rockY = groundY + rock.yOffset;
+
+                ctx.save();
+                ctx.translate(sx, rockY);
+
+                // Scale rocks based on Y position (closer = bigger for depth effect)
+                const depthScale = 0.8 + (rock.yOffset / 40) * 0.5;
+                ctx.scale(depthScale, depthScale);
+
+                // Shadow
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                ctx.beginPath();
+                ctx.ellipse(rock.size * 0.3, rock.size * 0.5, rock.size * 0.8, rock.size * 0.25, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Rock
+                ctx.rotate(rock.rotation);
+                ctx.fillStyle = rock.type.color;
+                ctx.beginPath();
+
+                // Irregular rock shape
+                const s = rock.size;
+                ctx.moveTo(0, -s * 0.6);
+                ctx.lineTo(s * 0.6, -s * 0.2);
+                ctx.lineTo(s * 0.7, s * 0.3);
+                ctx.lineTo(s * 0.2, s * 0.5);
+                ctx.lineTo(-s * 0.4, s * 0.4);
+                ctx.lineTo(-s * 0.6, -s * 0.1);
+                ctx.closePath();
+                ctx.fill();
+
+                // Highlight for depth
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+                ctx.beginPath();
+                ctx.moveTo(-s * 0.2, -s * 0.5);
+                ctx.lineTo(s * 0.3, -s * 0.3);
+                ctx.lineTo(s * 0.1, -s * 0.1);
+                ctx.lineTo(-s * 0.3, -s * 0.2);
+                ctx.closePath();
+                ctx.fill();
+
+                // Glow if collectible (blue to purple colors)
+                if (canCollect) {
+                    // Vary color based on rock position for variety
+                    const hue = 220 + (rock.x % 60);  // Range from blue (220) to purple (280)
+                    const glowColor = `hsl(${hue}, 80%, 60%)`;
+                    ctx.shadowColor = glowColor;
+                    ctx.shadowBlur = 12;
+                    ctx.strokeStyle = glowColor;
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                    ctx.shadowBlur = 0;
+                }
+
+                ctx.restore();
+            });
+        }
+
+        function drawAlien() {
+            if (state.aliens.length === 0) return;
+
+            const groundY = state.groundY;
+
+            // Draw each alien
+            for (const alien of state.aliens) {
+                const sx = alien.x - state.camera.x;
+
+                // Skip if off screen
+                if (sx < -100 || sx > canvas.width + 100) continue;
+
+                // Alien is about knee-height to astronaut
+                const alienY = groundY + 10;
+                const bounce = Math.sin(alien.bouncePhase) * 3;
+                const runBounce = alien.state === 'running' ? Math.sin(alien.bouncePhase * 2) * 5 : 0;
+
+                ctx.save();
+                ctx.translate(sx, alienY + bounce + runBounce);
+
+                // Flip based on facing direction
+                if (!alien.facingRight) {
+                    ctx.scale(-1, 1);
+                }
+
+                // Scale based on individual alien size (bigger base + variation)
+                const scale = 1.1 * alien.scale;
+                ctx.scale(scale, scale);
+
+                // Shadow
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                ctx.beginPath();
+                ctx.ellipse(0, 28, 12, 4, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Legs (little stubby legs)
+                ctx.fillStyle = '#9ACD32';  // Yellow-green
+                // Left leg
+                ctx.beginPath();
+                ctx.ellipse(-8, 22, 5, 8, -0.2, 0, Math.PI * 2);
+                ctx.fill();
+                // Right leg
+                ctx.beginPath();
+                ctx.ellipse(8, 22, 5, 8, 0.2, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Arms (little stubby arms)
+                const armWave = alien.state === 'scared' ? Math.sin(alien.bouncePhase * 3) * 0.3 : 0;
+                // Left arm
+                ctx.save();
+                ctx.translate(-12, 5);
+                ctx.rotate(-0.5 + armWave);
+                ctx.beginPath();
+                ctx.ellipse(0, 6, 4, 7, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+                // Right arm
+                ctx.save();
+                ctx.translate(12, 5);
+                ctx.rotate(0.5 - armWave);
+                ctx.beginPath();
+                ctx.ellipse(0, 6, 4, 7, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+
+                // Body/Head (big round head like the plush)
+                ctx.fillStyle = '#ADFF2F';  // Bright lime green
+                ctx.beginPath();
+                ctx.arc(0, 0, 18, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Slight body bulge
+                ctx.beginPath();
+                ctx.ellipse(0, 15, 10, 8, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Antennae with pom-poms
+                ctx.strokeStyle = '#9ACD32';
+                ctx.lineWidth = 2;
+                // Left antenna
+                ctx.beginPath();
+                ctx.moveTo(-8, -15);
+                ctx.quadraticCurveTo(-12, -28, -10, -32);
+                ctx.stroke();
+                ctx.fillStyle = '#ADFF2F';
+                ctx.beginPath();
+                ctx.arc(-10, -34, 5, 0, Math.PI * 2);
+                ctx.fill();
+                // Right antenna
+                ctx.beginPath();
+                ctx.moveTo(8, -15);
+                ctx.quadraticCurveTo(12, -28, 10, -32);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(10, -34, 5, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Big purple eyes
+                ctx.fillStyle = '#4B0082';  // Dark purple
+                // Left eye
+                ctx.beginPath();
+                ctx.ellipse(-7, -2, 7, 10, -0.15, 0, Math.PI * 2);
+                ctx.fill();
+                // Right eye
+                ctx.beginPath();
+                ctx.ellipse(7, -2, 7, 10, 0.15, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Eye shine
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+                ctx.beginPath();
+                ctx.ellipse(-9, -5, 2, 3, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.ellipse(5, -5, 2, 3, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Little smile
+                ctx.strokeStyle = '#228B22';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.arc(0, 8, 5, 0.2, Math.PI - 0.2);
+                ctx.stroke();
+
+                ctx.restore();
+            }
+
+            // Speech bubble (shared for the group)
+            if (state.alienSpeechTimer > 0 && state.alienSpeech && state.aliens.length > 0) {
+                const speechX = state.alienSpeechX - state.camera.x;
+                const alienY = groundY + 10;
+                const bubbleX = speechX;
+                const bubbleY = alienY - 60;
+
+                ctx.save();
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                ctx.strokeStyle = '#333';
+                ctx.lineWidth = 2;
+
+                // Bubble
+                ctx.font = 'bold 14px Arial';
+                const textWidth = ctx.measureText(state.alienSpeech).width + 20;
+                roundRect(ctx, bubbleX - textWidth/2, bubbleY - 14, textWidth, 28, 10);
+                ctx.fill();
+                ctx.stroke();
+
+                // Pointer
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                ctx.beginPath();
+                ctx.moveTo(speechX, alienY - 30);
+                ctx.lineTo(bubbleX - 8, bubbleY + 12);
+                ctx.lineTo(bubbleX + 8, bubbleY + 12);
+                ctx.closePath();
+                ctx.fill();
+
+                // Text
+                ctx.fillStyle = '#333';
+                ctx.textAlign = 'center';
+                ctx.fillText(state.alienSpeech, bubbleX, bubbleY + 5);
+                ctx.restore();
+            }
+        }
+
+        function drawLunarLander() {
+            const lander = state.lander;
+            const sx = lander.x - state.camera.x;
+            const sy = lander.y;
+
+            ctx.save();
+            ctx.translate(sx, sy);
+
+            // Make it much bigger - scale up significantly
+            const scale = 2.2;
+            ctx.scale(scale, scale);
+
+            // Shadow
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+            ctx.beginPath();
+            ctx.ellipse(0, 8, 80, 15, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // === LEGS ===
+            ctx.strokeStyle = '#606060';
+            ctx.lineWidth = 6;
+
+            // Four legs
+            const legPositions = [-55, -25, 25, 55];
+            legPositions.forEach((lx, i) => {
+                const footX = lx * 1.6;
+                ctx.beginPath();
+                ctx.moveTo(lx, -65);
+                ctx.lineTo(footX, 0);
+                ctx.stroke();
+
+                // Cross braces
+                if (i < 3) {
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(lx, -40);
+                    ctx.lineTo(legPositions[i + 1], -40);
+                    ctx.stroke();
+                    ctx.lineWidth = 6;
+                }
+            });
+
+            // Foot pads
+            ctx.fillStyle = '#404040';
+            legPositions.forEach(lx => {
+                const footX = lx * 1.6;
+                ctx.beginPath();
+                ctx.ellipse(footX, 2, 20, 5, 0, 0, Math.PI * 2);
+                ctx.fill();
+                // Pad detail
+                ctx.strokeStyle = '#303030';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            });
+
+            // === DESCENT STAGE ===
+            // Gold mylar insulation
+            const goldGrad = ctx.createLinearGradient(-65, -65, 65, -110);
+            goldGrad.addColorStop(0, '#8B7355');
+            goldGrad.addColorStop(0.3, '#DAA520');
+            goldGrad.addColorStop(0.5, '#B8860B');
+            goldGrad.addColorStop(0.7, '#DAA520');
+            goldGrad.addColorStop(1, '#8B7355');
+
+            ctx.fillStyle = goldGrad;
+            ctx.beginPath();
+            ctx.moveTo(-65, -65);
+            ctx.lineTo(-75, -110);
+            ctx.lineTo(75, -110);
+            ctx.lineTo(65, -65);
+            ctx.closePath();
+            ctx.fill();
+
+            // Mylar wrinkle texture
+            ctx.strokeStyle = '#6B5344';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < 10; i++) {
+                ctx.beginPath();
+                ctx.moveTo(-60 + i * 13, -105);
+                ctx.lineTo(-55 + i * 13, -70);
+                ctx.stroke();
+            }
+
+            // Black thermal blanket sections
+            ctx.fillStyle = '#202020';
+            ctx.fillRect(-30, -105, 25, 35);
+            ctx.fillRect(5, -105, 25, 35);
+
+            // === ASCENT STAGE ===
+            // Main body - silver/white
+            const ascentGrad = ctx.createLinearGradient(-50, -110, 50, -110);
+            ascentGrad.addColorStop(0, '#C0C0C0');
+            ascentGrad.addColorStop(0.5, '#E8E8E8');
+            ascentGrad.addColorStop(1, '#A0A0A0');
+
+            ctx.fillStyle = ascentGrad;
+            ctx.beginPath();
+            ctx.moveTo(-55, -110);
+            ctx.lineTo(-60, -170);
+            ctx.lineTo(-45, -195);
+            ctx.lineTo(45, -195);
+            ctx.lineTo(60, -170);
+            ctx.lineTo(55, -110);
+            ctx.closePath();
+            ctx.fill();
+
+            // Shadow side
+            ctx.fillStyle = '#909090';
+            ctx.beginPath();
+            ctx.moveTo(10, -110);
+            ctx.lineTo(55, -110);
+            ctx.lineTo(60, -170);
+            ctx.lineTo(45, -195);
+            ctx.lineTo(10, -195);
+            ctx.closePath();
+            ctx.fill();
+
+            // Windows - triangular
+            ctx.fillStyle = '#101010';
+            // Left window
+            ctx.beginPath();
+            ctx.moveTo(-35, -165);
+            ctx.lineTo(-45, -135);
+            ctx.lineTo(-15, -130);
+            ctx.lineTo(-15, -170);
+            ctx.closePath();
+            ctx.fill();
+            // Right window
+            ctx.beginPath();
+            ctx.moveTo(35, -165);
+            ctx.lineTo(45, -135);
+            ctx.lineTo(15, -130);
+            ctx.lineTo(15, -170);
+            ctx.closePath();
+            ctx.fill();
+
+            // Window frames
+            ctx.strokeStyle = '#808080';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(-35, -165);
+            ctx.lineTo(-45, -135);
+            ctx.lineTo(-15, -130);
+            ctx.lineTo(-15, -170);
+            ctx.closePath();
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(35, -165);
+            ctx.lineTo(45, -135);
+            ctx.lineTo(15, -130);
+            ctx.lineTo(15, -170);
+            ctx.closePath();
+            ctx.stroke();
+
+            // Docking hatch on top
+            ctx.fillStyle = '#707070';
+            ctx.beginPath();
+            ctx.arc(0, -195, 15, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#505050';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // === RCS QUADS ===
+            ctx.fillStyle = '#606060';
+            // Front left
+            ctx.fillRect(-65, -160, 12, 25);
+            // Front right
+            ctx.fillRect(53, -160, 12, 25);
+
+            // === ANTENNAS ===
+            // Main antenna mast
+            ctx.strokeStyle = '#808080';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(0, -195);
+            ctx.lineTo(0, -240);
+            ctx.stroke();
+
+            // Dish
+            ctx.fillStyle = '#C0C0C0';
+            ctx.beginPath();
+            ctx.ellipse(0, -240, 22, 8, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#909090';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            // S-band antenna (side)
+            ctx.fillStyle = '#D0D0D0';
+            ctx.beginPath();
+            ctx.moveTo(-70, -180);
+            ctx.lineTo(-85, -200);
+            ctx.lineTo(-80, -205);
+            ctx.lineTo(-65, -185);
+            ctx.closePath();
+            ctx.fill();
+
+            // === LADDER ===
+            ctx.strokeStyle = '#707070';
+            ctx.lineWidth = 3;
+            // Rails
+            ctx.beginPath();
+            ctx.moveTo(-72, -65);
+            ctx.lineTo(-80, 0);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(-62, -65);
+            ctx.lineTo(-70, 0);
+            ctx.stroke();
+            // Rungs
+            ctx.lineWidth = 2;
+            for (let r = 0; r < 6; r++) {
+                const ry = -60 + r * 12;
+                const offset = r * 1.3;
+                ctx.beginPath();
+                ctx.moveTo(-72 - offset, ry);
+                ctx.lineTo(-62 - offset, ry);
+                ctx.stroke();
+            }
+
+            // === PLAQUE / TEXT ===
+            // "UNITED STATES" text area
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(-40, -90, 80, 18);
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 8px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('UNITED STATES', 0, -78);
+
+            // American flag decal
+            ctx.fillStyle = '#BF0A30';
+            ctx.fillRect(45, -95, 20, 12);
+            ctx.fillStyle = '#FFFFFF';
+            for (let i = 0; i < 7; i++) {
+                if (i % 2 === 1) ctx.fillRect(45, -95 + i * 1.7, 20, 1.7);
+            }
+            ctx.fillStyle = '#002868';
+            ctx.fillRect(45, -95, 8, 6);
+
+            ctx.restore();
+
+            // Flag (outside of scale transform)
+            drawFlag(sx + 140 * scale, sy);
+        }
+
+        function drawFlag(x, y) {
+            ctx.save();
+            ctx.translate(x, y);
+
+            ctx.strokeStyle = '#A0A0A0';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(0, -80);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(0, -80);
+            ctx.lineTo(40, -80);
+            ctx.stroke();
+
+            ctx.fillStyle = '#BF0A30';
+            ctx.fillRect(0, -80, 40, 25);
+            ctx.fillStyle = '#FFFFFF';
+            for (let i = 0; i < 7; i++) {
+                if (i % 2 === 1) ctx.fillRect(0, -80 + i * 3.5, 40, 3.5);
+            }
+            ctx.fillStyle = '#002868';
+            ctx.fillRect(0, -80, 16, 14);
+
+            ctx.restore();
+        }
+
+        function drawAstronaut() {
+            const astro = state.astronaut;
+            const sx = astro.x - state.camera.x;
+            const sy = astro.y + astro.bodyBob;
+
+            ctx.save();
+            ctx.translate(sx, sy);
+
+            // Shadow
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+            const height = state.groundY - astro.y;
+            const shadowScale = Math.max(0.6, 1 - height * 0.008);
+            const shadowStretch = astro.airborne ? 1.2 + height * 0.003 : 1;
+            ctx.beginPath();
+            ctx.ellipse(15 * shadowScale, 5, 22 * shadowStretch * shadowScale, 7 * shadowScale, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            const ep = astro.flipProgress < 0.5
+                ? 2 * astro.flipProgress * astro.flipProgress
+                : 1 - Math.pow(-2 * astro.flipProgress + 2, 2) / 2;
+            const scaleX = astro.facingRight ? -1 + ep * 2 : 1 - ep * 2;
+
+            const squash = astro.bodySquash || 1.0;
+
+            const tiltAmount = Math.min(0.08, Math.abs(astro.vx) * 0.012);
+            const visualTilt = astro.vx > 0 ? tiltAmount : -tiltAmount;
+            ctx.rotate(visualTilt);
+
+            ctx.scale(scaleX * (2 - squash), squash);
+
+            drawLeg(ctx, astro.rightHipAngle, astro.rightKneeAngle, true);
+            drawArm(ctx, astro.rightShoulderAngle, astro.rightElbowAngle, true);
+            drawPLSS(ctx);
+            drawTorso(ctx);
+            drawLeg(ctx, astro.leftHipAngle, astro.leftKneeAngle, false);
+            drawArm(ctx, astro.leftShoulderAngle, astro.leftElbowAngle, false);
+            drawHelmet(ctx);
+
+            ctx.restore();
+        }
+
+        function drawPLSS(ctx) {
+            ctx.save();
+            ctx.translate(-8, -72);
+
+            ctx.fillStyle = colors.plssLight;
+            roundRect(ctx, -20, -38, 40, 55, 4);
+            ctx.fill();
+
+            ctx.fillStyle = colors.plssDark;
+            ctx.beginPath();
+            ctx.moveTo(10, -36);
+            ctx.lineTo(18, -36);
+            ctx.quadraticCurveTo(20, -36, 20, -34);
+            ctx.lineTo(20, 15);
+            ctx.quadraticCurveTo(20, 17, 18, 17);
+            ctx.lineTo(10, 17);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = colors.suitDark;
+            ctx.fillRect(-18, -22, 36, 3);
+            ctx.fillRect(-18, -5, 36, 3);
+            ctx.fillRect(-18, 8, 36, 3);
+
+            // Oxygen hose
+            ctx.strokeStyle = '#404040';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(-20, -12);
+            ctx.quadraticCurveTo(-32, -12, -32, 3);
+            ctx.stroke();
+
+            // Red warning stripe
+            ctx.fillStyle = '#CC3333';
+            ctx.fillRect(-18, -32, 36, 4);
+
+            ctx.restore();
+        }
+
+        function drawTorso(ctx) {
+            ctx.save();
+            ctx.translate(0, -52);
+
+            // Main suit body
+            ctx.fillStyle = colors.suitLight;
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 24, 32, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Shading
+            ctx.fillStyle = colors.suitMid;
+            ctx.beginPath();
+            ctx.ellipse(7, 0, 17, 30, 0, -0.5, 1.2);
+            ctx.fill();
+
+            // Chest control unit
+            ctx.fillStyle = '#E0E0E0';
+            ctx.fillRect(-12, -15, 22, 26);
+            ctx.strokeStyle = '#888888';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(-12, -15, 22, 26);
+
+            // Blue oxygen connectors
+            ctx.fillStyle = '#3366AA';
+            ctx.beginPath();
+            ctx.arc(-6, -8, 4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(4, -8, 4, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Red water connectors
+            ctx.fillStyle = '#AA3333';
+            ctx.beginPath();
+            ctx.arc(-6, 2, 4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(4, 2, 4, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Connector highlights
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.beginPath();
+            ctx.arc(-7, -9, 1.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(3, -9, 1.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(-7, 1, 1.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(3, 1, 1.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // American flag patch on shoulder
+            ctx.fillStyle = '#BF0A30';
+            ctx.fillRect(-22, -20, 8, 5);
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(-22, -19, 8, 1);
+            ctx.fillRect(-22, -17, 8, 1);
+            ctx.fillStyle = '#002868';
+            ctx.fillRect(-22, -20, 3, 3);
+
+            // Waist area
+            ctx.fillStyle = colors.suitDark;
+            ctx.beginPath();
+            ctx.ellipse(0, 28, 22, 7, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        function drawHelmet(ctx) {
+            ctx.save();
+            ctx.translate(0, -95);
+
+            // Helmet shell
+            ctx.fillStyle = colors.helmetWhite;
+            ctx.beginPath();
+            ctx.arc(0, 0, 26, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Helmet shading
+            ctx.fillStyle = colors.helmetGrey;
+            ctx.beginPath();
+            ctx.arc(5, 2, 23, -0.3, 1.7);
+            ctx.fill();
+
+            // Gold visor
+            const visorGrad = ctx.createLinearGradient(5, -12, 20, 8);
+            visorGrad.addColorStop(0, '#8B7355');
+            visorGrad.addColorStop(0.3, '#DAA520');
+            visorGrad.addColorStop(0.5, '#B8860B');
+            visorGrad.addColorStop(0.7, colors.visorDark);
+            visorGrad.addColorStop(1, '#080808');
+
+            ctx.fillStyle = visorGrad;
+            ctx.beginPath();
+            ctx.ellipse(6, 2, 16, 18, 0.15, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Visor reflection
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+            ctx.beginPath();
+            ctx.ellipse(0, -4, 5, 4, -0.3, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Helmet neck ring
+            ctx.fillStyle = colors.suitDark;
+            ctx.beginPath();
+            ctx.ellipse(0, 20, 20, 7, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Side attachment
+            ctx.fillStyle = '#505050';
+            ctx.beginPath();
+            ctx.arc(-22, 0, 3, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Red camera/light on top
+            ctx.fillStyle = '#AA3333';
+            ctx.fillRect(-4, -28, 8, 5);
+
+            ctx.restore();
+        }
+
+        function drawArm(ctx, shoulderAngle, elbowAngle, isBack) {
+            ctx.save();
+
+            const shoulderX = isBack ? 16 : -20;
+            const shoulderY = -68;
+            ctx.translate(shoulderX, shoulderY);
+            ctx.rotate(shoulderAngle);
+
+            const baseColor = isBack ? colors.suitMid : colors.suitLight;
+            const jointColor = colors.suitDark;
+            const darkColor = isBack ? colors.suitDark : colors.suitMid;
+
+            // Upper arm
+            ctx.fillStyle = baseColor;
+            ctx.beginPath();
+            ctx.ellipse(0, 16, 11, 18, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Elbow joint (segmented look)
+            ctx.fillStyle = jointColor;
+            ctx.beginPath();
+            ctx.ellipse(0, 32, 9, 4, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.save();
+            ctx.translate(0, 32);
+            ctx.rotate(elbowAngle);
+
+            // Lower arm
+            ctx.fillStyle = baseColor;
+            ctx.beginPath();
+            ctx.ellipse(0, 16, 10, 16, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Wrist ring
+            ctx.fillStyle = '#707070';
+            ctx.beginPath();
+            ctx.ellipse(0, 30, 8, 3, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Glove - gray with slight blue tint
+            ctx.fillStyle = colors.gloveGray;
+            ctx.beginPath();
+            ctx.ellipse(0, 40, 8, 12, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Glove fingers suggestion
+            ctx.fillStyle = '#909090';
+            ctx.beginPath();
+            ctx.ellipse(0, 50, 6, 4, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+            ctx.restore();
+        }
+
+        function drawLeg(ctx, hipAngle, kneeAngle, isBack) {
+            ctx.save();
+
+            const hipX = isBack ? 8 : -8;
+            const hipY = -24;
+            ctx.translate(hipX, hipY);
+            ctx.rotate(hipAngle);
+
+            const baseColor = isBack ? colors.suitMid : colors.suitLight;
+            const jointColor = colors.suitDark;
+
+            // Upper leg
+            ctx.fillStyle = baseColor;
+            ctx.beginPath();
+            ctx.ellipse(0, 20, 13, 24, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Knee joint (accordion segments)
+            ctx.fillStyle = jointColor;
+            for (let i = 0; i < 3; i++) {
+                ctx.beginPath();
+                ctx.ellipse(0, 40 + i * 3, 11 - i, 2, 0, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            ctx.save();
+            ctx.translate(0, 42);
+            ctx.rotate(kneeAngle);
+
+            // Lower leg
+            ctx.fillStyle = baseColor;
+            ctx.beginPath();
+            ctx.ellipse(0, 20, 12, 22, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Ankle ring
+            ctx.fillStyle = '#707070';
+            ctx.beginPath();
+            ctx.ellipse(0, 40, 12, 4, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // === BOOT - based on reference images ===
+            // Boot upper (white/cream fabric portion)
+            ctx.fillStyle = colors.suitLight;
+            ctx.beginPath();
+            ctx.moveTo(-12, 40);
+            ctx.lineTo(-14, 50);
+            ctx.lineTo(-14, 56);
+            ctx.lineTo(14, 56);
+            ctx.lineTo(14, 50);
+            ctx.lineTo(12, 40);
+            ctx.closePath();
+            ctx.fill();
+
+            // Strap detail on boot upper
+            ctx.strokeStyle = '#888888';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(-12, 48);
+            ctx.lineTo(12, 48);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(-12, 52);
+            ctx.lineTo(12, 52);
+            ctx.stroke();
+
+            // Boot sole - dark rubber with rounded chunky shape
+            ctx.fillStyle = colors.bootRubber;
+            ctx.beginPath();
+            ctx.moveTo(-14, 56);
+            ctx.lineTo(-15, 60);
+            ctx.lineTo(-15, 68);
+            ctx.quadraticCurveTo(-15, 72, -10, 72);
+            ctx.lineTo(14, 72);
+            ctx.quadraticCurveTo(18, 72, 18, 68);
+            ctx.lineTo(18, 60);
+            ctx.lineTo(14, 56);
+            ctx.closePath();
+            ctx.fill();
+
+            // Ribbed tread pattern on sole
+            ctx.fillStyle = colors.bootTread;
+            for (let i = 0; i < 5; i++) {
+                ctx.fillRect(-13, 58 + i * 3, 28, 1.5);
+            }
+
+            // Boot toe cap (slightly rounded forward)
+            ctx.fillStyle = colors.bootRubber;
+            ctx.beginPath();
+            ctx.ellipse(2, 72, 16, 4, 0, Math.PI, Math.PI * 2);
+            ctx.fill();
+
+            // Sole edge highlight
+            ctx.strokeStyle = '#4D4D4D';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(-15, 60);
+            ctx.lineTo(-15, 68);
+            ctx.quadraticCurveTo(-15, 72, -10, 72);
+            ctx.lineTo(14, 72);
+            ctx.quadraticCurveTo(18, 72, 18, 68);
+            ctx.lineTo(18, 60);
+            ctx.stroke();
+
+            ctx.restore();
+            ctx.restore();
+        }
+
+        function roundRect(ctx, x, y, w, h, r) {
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.lineTo(x + w - r, y);
+            ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+            ctx.lineTo(x + w, y + h - r);
+            ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+            ctx.lineTo(x + r, y + h);
+            ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+            ctx.lineTo(x, y + r);
+            ctx.quadraticCurveTo(x, y, x + r, y);
+            ctx.closePath();
+        }
+
+        // Game loop
+        let lastTime = performance.now();
+
+        function gameLoop(currentTime) {
+            const dt = Math.min((currentTime - lastTime) / 1000, 0.1);
+            lastTime = currentTime;
+
+            updateFingerWorldPosition();
+            updateAstronaut(dt);
+            updateCamera();
+            updateDust(dt);
+            updateFootprints(dt);
+            updateOxygen(dt);
+            expandRocksIfNeeded();
+            autoCollectRocks();
+            updateAlien(dt);
+            checkLanderInteraction();
+            updateUI();
+
+            ctx.fillStyle = colors.sky;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            drawStars();
+            drawEarth();
+            drawMountains();
+            drawSurface();
+            drawFootprints();
+            drawRocks();
+            drawAlien();
+            drawDust();
+            drawLunarLander();
+            drawAstronaut();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        init();
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>
