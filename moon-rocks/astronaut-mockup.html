@@ -71,6 +71,7 @@
 
                 // Walk state
                 isWalking: false,
+                moveDirection: 0,    // -1 left, 0 stopped, +1 right (with hysteresis)
                 stepFoot: 0,         // 0 = left foot forward, 1 = right foot forward
 
                 // Hop state
@@ -98,7 +99,7 @@
                 bodyBob: 0           // Vertical compression
             },
             lander: { x: 0, y: 0 },
-            finger: { x: null, y: null, active: false },
+            finger: { x: null, y: null, screenX: null, active: false },
             camera: { x: 0 },
             stars: [],
             footprints: [],
@@ -128,20 +129,27 @@
             initStars();
         }
 
-        // Input - simplified: just track if touching and where
+        // Input - track SCREEN position, compute world position each frame
         function handleStart(x, y) {
             state.finger.active = true;
-            state.finger.x = x + state.camera.x;
+            state.finger.screenX = x;  // Store screen position
             state.finger.y = y;
         }
         function handleMove(x, y) {
             if (state.finger.active) {
-                state.finger.x = x + state.camera.x;
+                state.finger.screenX = x;  // Store screen position
                 state.finger.y = y;
             }
         }
         function handleEnd() {
             state.finger.active = false;
+        }
+
+        // Call this each frame to update world position from screen position
+        function updateFingerWorldPosition() {
+            if (state.finger.active && state.finger.screenX !== null) {
+                state.finger.x = state.finger.screenX + state.camera.x;
+            }
         }
 
         canvas.addEventListener('mousedown', e => handleStart(e.clientX, e.clientY));
@@ -190,89 +198,84 @@
             const finger = state.finger;
             const groundY = state.groundY;
 
-            // Determine if we should walk and which direction
+            // Simple, direct puppet control
             let wantToWalk = false;
-            let walkDirection = 0; // -1 left, +1 right
-            let hopIntensity = 1.0;  // Controlled by finger height
+            let walkDirection = 0;
+            let hopIntensity = 1.0;
 
             if (finger.active && finger.x !== null) {
                 const dx = finger.x - astro.x;
 
-                // Finger height controls hop intensity!
-                // Higher finger (lower Y) = bigger hops
-                // Lower finger (higher Y) = smaller quick hops
-                const fingerYNorm = finger.y / canvas.height;  // 0 = top, 1 = bottom
-                // Map: top of screen = 4.5 intensity, bottom = 0.25 intensity
+                // Finger height controls hop intensity
+                const fingerYNorm = finger.y / canvas.height;
                 hopIntensity = 4.5 - fingerYNorm * 4.25;
-                hopIntensity = Math.max(0.25, Math.min(5.0, hopIntensity));  // Clamp
+                hopIntensity = Math.max(0.25, Math.min(5.0, hopIntensity));
 
-                // Very small deadzone - keep moving as long as finger is down
-                if (Math.abs(dx) > 10) {
+                const moveThreshold = 15;
+
+                if (Math.abs(dx) > moveThreshold) {
                     wantToWalk = true;
-                    walkDirection = dx > 0 ? 1 : -1;
+                    const fingerDirection = dx > 0 ? 1 : -1;
 
-                    // Only change facing direction when ON THE GROUND
-                    // Prevents glitchy flipping mid-hop
+                    // ONLY change direction when ON THE GROUND
+                    // This makes movement feel committed and responsive
                     if (!astro.airborne) {
-                        const shouldFaceRight = dx > 0;
+                        walkDirection = fingerDirection;
+
+                        // Update facing to match
+                        const shouldFaceRight = walkDirection > 0;
                         if (shouldFaceRight !== astro.facingRight) {
                             astro.facingRight = shouldFaceRight;
                             astro.flipProgress = 0;
                         }
                     } else {
-                        // While airborne, keep moving in facing direction
+                        // In air - keep the direction we launched with
                         walkDirection = astro.facingRight ? 1 : -1;
                     }
-                } else if (astro.isWalking) {
-                    // Keep walking in same direction if close to finger
-                    wantToWalk = true;
-                    walkDirection = astro.facingRight ? 1 : -1;
                 }
             }
 
-            // Moon physics constants
-            const moonGravity = 0.22;
-            const baseHopStrength = 4.0;
-            const baseWalkSpeed = 5.0;
+            // Moon physics
+            const moonGravity = 0.2;
+            const baseHopStrength = 3.5;
+            const baseWalkSpeed = 4.5;
 
-            // Walking state machine
             if (wantToWalk) {
                 astro.isWalking = true;
-                // Speed varies with hop intensity - bigger hops = much faster
-                astro.vx = walkDirection * baseWalkSpeed * (0.5 + hopIntensity * 0.5);
+                const targetVx = walkDirection * baseWalkSpeed * (0.5 + hopIntensity * 0.4);
+                astro.vx += (targetVx - astro.vx) * 0.2;
 
-                // If on ground and want to walk, initiate a hop
+                // Start hop if on ground
                 if (!astro.airborne) {
-                    // Hop variation combines finger height with small random factor
-                    astro.hopVariation = hopIntensity * (0.94 + Math.random() * 0.12);
-                    // Bigger hops are floatier, smaller hops are snappy
-                    astro.hopSpeedVar = 2.0 - hopIntensity * 0.35;
-                    astro.armWobble = (Math.random() - 0.5) * 0.12;
-
+                    astro.hopVariation = hopIntensity * (0.9 + Math.random() * 0.2);
                     astro.vy = -baseHopStrength * astro.hopVariation;
                     astro.airborne = true;
-                    astro.stepFoot = 1 - astro.stepFoot; // Alternate feet
+                    astro.stepFoot = 1 - astro.stepFoot;
                     astro.hopProgress = 0;
-
-                    // Dust on push-off, scaled by hop strength
-                    addDust(astro.x, groundY, astro.vx, astro.hopVariation * 0.6);
-                    addFootprint(astro.x + (Math.random() - 0.5) * 8, groundY);
-
-                    // Squash on push-off - more for bigger hops
-                    astro.bodySquash = 0.94 - astro.hopVariation * 0.04;
+                    addDust(astro.x, groundY, astro.vx, astro.hopVariation * 0.5);
+                    addFootprint(astro.x, groundY);
                 }
             } else {
-                astro.isWalking = false;
-                astro.vx *= 0.85;
-                if (Math.abs(astro.vx) < 0.1) astro.vx = 0;
+                // Not actively walking toward finger
+                if (astro.airborne) {
+                    // In air - keep momentum, just reduce slightly
+                    astro.vx *= 0.98;
+                } else {
+                    // On ground - slow down faster
+                    astro.isWalking = false;
+                    astro.vx *= 0.85;
+                    if (Math.abs(astro.vx) < 0.1) astro.vx = 0;
+                }
             }
 
-            // Apply gravity if airborne
+            // Gravity and hop progress
             if (astro.airborne) {
                 astro.vy += moonGravity;
-                // Track hop progress - varies with hop size
-                const progressSpeed = 7.5 * astro.hopSpeedVar;
-                astro.hopProgress = Math.min(1, (astro.hopProgress || 0) + dt * progressSpeed);
+                // Progress synced to actual hop physics
+                // Hop duration in frames = 2 * initialVy / gravity = 2 * (3.5 * hopVariation) / 0.2 = 35 * hopVariation
+                const hopDurationFrames = 35 * astro.hopVariation;
+                const progressRate = 1.0 / Math.max(10, hopDurationFrames);  // At least 10 frames
+                astro.hopProgress = Math.min(1, astro.hopProgress + progressRate);
 
                 // Stretch at peak of hop
                 if (astro.vy < 0.5 && astro.vy > -0.5) {
@@ -323,70 +326,57 @@
         }
 
         function updateLimbAngles(astro, dt) {
-            const hp = astro.hopProgress || 0; // 0 = just pushed off, 1 = about to land
-            const foot = astro.stepFoot; // 0 = left foot forward, 1 = right foot forward
-            const hv = astro.hopVariation || 1.0;  // Hop variation affects stride
-            const wobble = astro.armWobble || 0;
+            const foot = astro.stepFoot; // 0 or 1, alternates each hop
+            const hv = Math.min(astro.hopVariation || 1.0, 3.0);  // Cap for sanity
 
-            if (astro.isWalking || astro.airborne) {
-                // Bounding hop - alternating legs
-                // Bigger hops = bigger stride, smaller hops = tighter stride
-                const strideScale = 0.7 + hv * 0.4;  // Scale leg spread by hop size
+            if (astro.airborne) {
+                // Smooth sine curve through the hop
+                const hp = astro.hopProgress;
+                const spread = Math.sin(hp * Math.PI);
 
-                let landHip, landKnee, pushHip, pushKnee;
+                // Small leg separation - alternates each hop
+                // Keeps legs mostly under body but not tied together
+                const legSign = foot === 0 ? 1 : -1;
+                const legSpread = spread * 0.12;  // Small amount
+                astro.leftHipAngle = -legSpread * legSign;
+                astro.rightHipAngle = legSpread * legSign;
 
-                if (hp < 0.2) {
-                    // Push off - back leg extends to push
-                    const phase = hp / 0.2;
-                    landHip = -0.2 * strideScale;
-                    landKnee = 0.55 * (1 - phase);
-                    pushHip = 0.55 * strideScale * (1 - phase);
-                    pushKnee = 0.65 * (1 - phase);
+                // Bounce from knee bending
+                const kneeBend = 0.6 + spread * 0.6;  // 35-70 degrees
+                astro.leftKneeAngle = kneeBend;
+                astro.rightKneeAngle = kneeBend;
 
-                } else if (hp < 0.6) {
-                    // In air - legs swap, float feeling
-                    const phase = (hp - 0.2) / 0.4;
-                    // Smooth transition
-                    landHip = -0.2 * strideScale + phase * 0.55 * strideScale;
-                    landKnee = 0.25 + Math.sin(phase * Math.PI) * 0.1;  // Slight bend variation
-                    pushHip = 0.15 * strideScale - phase * 0.45 * strideScale;
-                    pushKnee = 0.35 + Math.sin(phase * Math.PI) * 0.1;
+                // Arms swing opposite to each other (like natural walking)
+                // Also float up slightly in low gravity
+                const armSwing = spread * 0.4;
+                const armLift = spread * 0.2;
 
-                } else {
-                    // Landing - absorb impact
-                    const phase = (hp - 0.6) / 0.4;
-                    landHip = 0.35 * strideScale - phase * 0.2 * strideScale;
-                    landKnee = 0.25 + phase * 0.35;  // Bend to absorb
-                    pushHip = -0.3 * strideScale + phase * 0.15 * strideScale;
-                    pushKnee = 0.35 + phase * 0.45;  // Bend to land
-                }
-
-                // Apply to correct legs based on which foot is landing
+                // Opposite arm to leg - if left leg forward, right arm forward
                 if (foot === 0) {
-                    astro.leftHipAngle = pushHip;
-                    astro.leftKneeAngle = pushKnee;
-                    astro.rightHipAngle = landHip;
-                    astro.rightKneeAngle = landKnee;
+                    // Left leg forward, so RIGHT arm forward, LEFT arm back
+                    astro.leftShoulderAngle = 0.1 + armSwing - armLift;   // Back
+                    astro.rightShoulderAngle = -0.3 - armSwing - armLift; // Forward
                 } else {
-                    astro.rightHipAngle = pushHip;
-                    astro.rightKneeAngle = pushKnee;
-                    astro.leftHipAngle = landHip;
-                    astro.leftKneeAngle = landKnee;
+                    // Right leg forward, so LEFT arm forward, RIGHT arm back
+                    astro.leftShoulderAngle = -0.3 - armSwing - armLift;  // Forward
+                    astro.rightShoulderAngle = 0.1 + armSwing - armLift;  // Back
                 }
 
-                // Arms swing opposite to legs with variation
-                const armSwingBase = 0.35 + hv * 0.1;
-                const armFloat = Math.sin(hp * Math.PI) * 0.08;  // Float up at apex
-                if (foot === 0) {
-                    astro.leftShoulderAngle = 0.25 + wobble + armFloat;
-                    astro.rightShoulderAngle = armSwingBase + 0.15 - wobble + armFloat;
-                } else {
-                    astro.leftShoulderAngle = armSwingBase + 0.15 + wobble + armFloat;
-                    astro.rightShoulderAngle = 0.25 - wobble + armFloat;
-                }
-                // Elbows with slight variation
-                astro.leftElbowAngle = -0.95 - wobble * 0.5;
-                astro.rightElbowAngle = -0.95 + wobble * 0.5;
+                astro.leftElbowAngle = -0.7;
+                astro.rightElbowAngle = -0.7;
+
+            } else if (astro.isWalking) {
+                // On ground - crouch
+                astro.leftHipAngle = 0;
+                astro.rightHipAngle = 0;
+                astro.leftKneeAngle = 0.6;
+                astro.rightKneeAngle = 0.6;
+
+                // Arms slightly forward, relaxed
+                astro.leftShoulderAngle = -0.15;
+                astro.rightShoulderAngle = -0.15;
+                astro.leftElbowAngle = -0.7;
+                astro.rightElbowAngle = -0.7;
 
             } else {
                 // Idle - relaxed stance with gentle breathing motion
@@ -678,9 +668,8 @@
             // Apply squash/stretch
             const squash = astro.bodySquash || 1.0;
 
-            // Body tilt BEFORE scale so it doesn't get inverted
-            // Always lean forward into movement
-            const tiltAmount = Math.abs(astro.vx) * 0.07;
+            // Very subtle body tilt - just a hint of lean
+            const tiltAmount = Math.min(0.08, Math.abs(astro.vx) * 0.012);  // Max ~4.5 degrees
             const visualTilt = astro.vx > 0 ? tiltAmount : -tiltAmount;
             ctx.rotate(visualTilt);
 
@@ -974,6 +963,7 @@
             const dt = Math.min((currentTime - lastTime) / 1000, 0.1);
             lastTime = currentTime;
 
+            updateFingerWorldPosition();  // Update finger world coords with current camera
             updateAstronaut(dt);
             updateCamera();
             updateDust(dt);
