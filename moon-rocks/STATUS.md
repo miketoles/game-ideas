@@ -118,6 +118,18 @@ cd ~/dev/game-ideas/moon-rocks && python3 -m http.server 8001
 - **v12**: Sort HUD by total score per rock type
 - **v13-v21**: Footprint system - Apollo-style ribbed prints, proper positioning, fade over time
 
+## Known Issues (Fix Next Session)
+
+1. **Oxygen drains too fast** - Make oxygen last longer
+2. **Mobile portrait bug** - If player has finger on right side of astronaut and moves finger off screen to the right, astronaut launches fast to the LEFT (wrong direction)
+3. **Mobile portrait scaling** - Astronaut looks huge on mobile in portrait mode
+4. **Mobile landscape scaling** - Everything way too big, starts zoomed in with only top half of lunar lander visible
+5. **Mobile finger controls** - Not enough space for finger, astronaut keeps getting too close to touch point causing control issues
+
+**Root cause hypothesis:** Everything is just too big on mobile - fixing the scale might resolve most of these issues.
+
+---
+
 ## What's Next (Ideas)
 
 - More alien behaviors/interactions
